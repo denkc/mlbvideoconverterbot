@@ -9,7 +9,7 @@ import psycopg2
 import requests
 
 r = praw.Reddit(user_agent="mlbvideoconverter")
-r.login(os.environ['REDDIT_USER'], os.environ['REDDIT_PASS'])
+r.login('MLBVideoConverterBot', '&ai#n^ky86dQ')  # os.environ['REDDIT_USER'], os.environ['REDDIT_PASS'])
 
 MLB_DESKTOP_PATTERN = r'http://mlb.mlb.com/mlb/.*content_id=(?P<content_id>\d+)'
 MLB_MOBILE_PATTERN = r'mlb.com/(?:\w{2,3}/)?video/(?:topic/\d+/)?v(?P<content_id>\d+)/'
@@ -69,10 +69,10 @@ def convert_mlb_link(text):
     return MLB_MP4_FORMAT.format(**format_params)
 
 conn = psycopg2.connect(
-    host=os.environ['DB_HOST'],
+    host=localhost,  # os.environ['DB_HOST'],
     dbname='mlb',
-    user=os.environ['DB_USER'],
-    password=os.environ['DB_PASSWORD']
+    user='postgres',  # os.environ['DB_USER'],
+    password="Don't1stop2me3now"  # os.environ['DB_PASSWORD']
 )
 cursor = conn.cursor()
 cursor.execute("CREATE DATABASE IF NOT EXISTS mlb")
