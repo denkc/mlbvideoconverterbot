@@ -1,0 +1,3 @@
+env/
+heroku_config.sh
+*.pg
