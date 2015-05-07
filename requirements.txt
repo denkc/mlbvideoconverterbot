@@ -1,0 +1,4 @@
+bs4
+praw==2.1.21
+psycopg2
+requests
