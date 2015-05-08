@@ -31,23 +31,27 @@ secondary_subreddits = ['angelsbaseball', 'astros', 'azdiamondbacks', 'braves', 
 primary_domains = ['mlb.com']
 
 # testing override
-# primary_subreddits = ['mlbvideoconverterbot']; secondary_subreddits = []
+primary_subreddits = ['mlbvideoconverterbot']; secondary_subreddits = []
 
 primary_limit = 26
 group_size = 16
 group_limit = 100
 
-def convert_mlb_link(text):
+def find_mlb_links(text):
     text = text.encode('utf-8')
 
-    for mlb_pattern in MLB_PATTERNS:
-        match = re.search(mlb_pattern, text)
-        if match:
-            content_id = match.group('content_id')
-            break
-    else:
-        return None
+    matched_content_ids = []
 
+    for mlb_pattern in MLB_PATTERNS:
+        matches = re.finditer(mlb_pattern, text)
+        for match in matches:
+            content_id = match.group('content_id')
+            print "match {} found: {}".format(content_id, text)
+            matched_content_ids.append(content_id)
+
+    return [get_media_for_content_id(content_id) for content_id in matched_content_ids]
+
+def get_media_for_content_id(content_id):
     url = MLB_VIDEO_XML_FORMAT.format(**{
         "first": content_id[-3],
         "second": content_id[-2],
@@ -98,7 +102,8 @@ def subreddit_submissions(subreddits):
     for subreddit, limit in subreddits:
         try:
             print "  Checking {}".format(subreddit)
-            yield r.get_subreddit(subreddit).get_hot(limit=limit)
+            for submission in r.get_subreddit(subreddit).get_hot(limit=limit):
+                yield submission
         except:
             print "error encountered getting submissions for {}.".format(subreddit)
             continue
@@ -107,46 +112,47 @@ def domain_submissions(domains):
     for domain, limit in domains:
         try:
             print "  Checking {}".format(domain)
-            yield r.get_domain_listing(domain, limit=limit)
+            for submission in r.get_domain_listing(domain, limit=limit):
+                yield submission
         except:
             print "error encountered getting submissions for domain {}.".format(domain)
             continue
 
-def find_mlb_links():
+def bot():
     subreddits = [(subreddit, primary_limit) for subreddit in primary_subreddits]
     subreddits += [("+".join(secondary_subreddits[i:i+group_size]), group_limit) for i in range(0, len(secondary_subreddits), group_size)]
     domains = [(domain, primary_limit) for domain in primary_domains]
-    for submissions in itertools.chain(subreddit_submissions(subreddits), domain_submissions(domains)):
-        for submission in submissions:
-            if not check_hash_exists('submissions', submission.id):
-                if submission.is_self:
-                    mlb_link = convert_mlb_link(submission.selftext)
-                else:
-                    mlb_link = convert_mlb_link(submission.url)
 
-                if mlb_link:
-                    submission.add_comment(comment_text(mlb_link))
-                    cursor.execute("INSERT INTO submissions (hash_id) VALUES ('{}');".format(submission.id))
-                    conn.commit()
+    for submission in itertools.chain(subreddit_submissions(subreddits), domain_submissions(domains)):
+        if not check_hash_exists('submissions', submission.id):
+            if submission.is_self:
+                mlb_links = find_mlb_links(submission.selftext)
+            else:
+                mlb_links = find_mlb_links(submission.url)
 
-            # submission.replace_more_comments(limit=None, threshold=0)
-            try:
-                comments = praw.helpers.flatten_tree(submission.comments)
-            except:
-                print "error encountered getting comments for {}.{}".format(subreddit, submission.id)
+            if mlb_links:
+                submission.add_comment(comment_text("\n\n".join(mlb_links)))
+                cursor.execute("INSERT INTO submissions (hash_id) VALUES ('{}');".format(submission.id))
+                conn.commit()
+
+        # submission.replace_more_comments(limit=None, threshold=0)
+        try:
+            comments = praw.helpers.flatten_tree(submission.comments)
+        except:
+            print "error encountered getting comments for {}.{}".format(subreddit, submission.id)
+            continue
+        for comment in praw.helpers.flatten_tree(submission.comments):
+            if check_hash_exists('comments', comment.id):
                 continue
-            for comment in praw.helpers.flatten_tree(submission.comments):
-                if check_hash_exists('comments', comment.id):
-                    continue
 
-                if comment.__class__.__name__ == 'MoreComments':
-                    continue
+            if comment.__class__.__name__ == 'MoreComments':
+                continue
 
-                mlb_link = convert_mlb_link(comment.body)
-                if mlb_link:
-                    comment.reply(comment_text(mlb_link))
-                    cursor.execute("INSERT INTO comments (hash_id) VALUES ('{}');".format(comment.id))
-                    conn.commit()
+            mlb_links = find_mlb_links(comment.body)
+            if mlb_links:
+                comment.reply(comment_text("\n\n".join(mlb_links)))
+                cursor.execute("INSERT INTO comments (hash_id) VALUES ('{}');".format(comment.id))
+                conn.commit()
 
 iteration = 0
 while True:
@@ -154,7 +160,7 @@ while True:
     print "Iteration: {}".format(iteration)
     iteration += 1
     try:
-        find_mlb_links()
+        bot()
         print "Done with iteration.  Time to run: {}".format(time.time()-start_time)
     except Exception, e:
         print "Error: {}".format(e)
