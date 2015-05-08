@@ -31,7 +31,7 @@ secondary_subreddits = ['angelsbaseball', 'astros', 'azdiamondbacks', 'braves', 
 primary_domains = ['mlb.com']
 
 # testing override
-primary_subreddits = ['mlbvideoconverterbot']; secondary_subreddits = []
+# primary_subreddits = ['mlbvideoconverterbot']; secondary_subreddits = []; primary_domains = []
 
 primary_limit = 26
 group_size = 16
@@ -74,19 +74,23 @@ def get_media_for_content_id(content_id):
 
     return largest_mp4_url
 
-conn = psycopg2.connect(
-    host='localhost',  # os.environ['DB_HOST'],
-    dbname='mlb',
-    user='postgres',  # os.environ['DB_USER'],
-    password="Don't1stop2me3now"  # os.environ['DB_PASSWORD']
-)
-cursor = conn.cursor()
-#cursor.execute("CREATE DATABASE IF NOT EXISTS mlb")
-cursor.execute("CREATE TABLE IF NOT EXISTS submissions (hash_id varchar PRIMARY KEY)")
-cursor.execute("CREATE TABLE IF NOT EXISTS comments (hash_id varchar PRIMARY KEY)")
-conn.commit()
+def connect_to_db(create=False):
+    conn = psycopg2.connect(
+        host='localhost',  # os.environ['DB_HOST'],
+        dbname='mlb',
+        user='postgres',  # os.environ['DB_USER'],
+        password="Don't1stop2me3now"  # os.environ['DB_PASSWORD']
+    )
+    cursor = conn.cursor()
+    if create:
+        #cursor.execute("CREATE DATABASE IF NOT EXISTS mlb")
+        cursor.execute("CREATE TABLE IF NOT EXISTS submissions (hash_id varchar PRIMARY KEY)")
+        cursor.execute("CREATE TABLE IF NOT EXISTS comments (hash_id varchar PRIMARY KEY)")
+        conn.commit()
 
-def check_hash_exists(table_name, hash_id):
+    return conn, cursor
+
+def check_hash_exists(table_name, hash_id, cursor):
     cursor.execute("SELECT hash_id FROM {} WHERE hash_id = '{}';".format(table_name, hash_id))
     match = cursor.fetchone()
     return match
@@ -119,12 +123,13 @@ def domain_submissions(domains):
             continue
 
 def bot():
+    conn, cursor = connect_to_db()
     subreddits = [(subreddit, primary_limit) for subreddit in primary_subreddits]
     subreddits += [("+".join(secondary_subreddits[i:i+group_size]), group_limit) for i in range(0, len(secondary_subreddits), group_size)]
     domains = [(domain, primary_limit) for domain in primary_domains]
 
     for submission in itertools.chain(subreddit_submissions(subreddits), domain_submissions(domains)):
-        if not check_hash_exists('submissions', submission.id):
+        if not check_hash_exists('submissions', submission.id, cursor):
             if submission.is_self:
                 mlb_links = find_mlb_links(submission.selftext)
             else:
@@ -142,7 +147,7 @@ def bot():
             print "error encountered getting comments for {}.{}".format(subreddit, submission.id)
             continue
         for comment in praw.helpers.flatten_tree(submission.comments):
-            if check_hash_exists('comments', comment.id):
+            if check_hash_exists('comments', comment.id, cursor):
                 continue
 
             if comment.__class__.__name__ == 'MoreComments':
@@ -153,6 +158,7 @@ def bot():
                 comment.reply(comment_text("\n\n".join(mlb_links)))
                 cursor.execute("INSERT INTO comments (hash_id) VALUES ('{}');".format(comment.id))
                 conn.commit()
+    conn.close()
 
 iteration = 0
 while True:
