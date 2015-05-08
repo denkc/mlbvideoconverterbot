@@ -20,13 +20,7 @@ MLB_PATTERNS = [
     r'www.mlb.com/r/video\?.*content_id=(?P<content_id>\d+)'
 ]
 
-MLB_MOBILE_FEATURED_VIDEOS_PATTERN = r'"keyword":"(?P<xml_base_path>http://gdx.mlb.com/components/game/mlb/year_\d{4}/month_\d{2}/day_\d{2}/gid_\d{4}_\d{2}_\d{2}_\w{3}mlb_\w{3}mlb_1/)game_events.plist"'
-# (?P<team_away>\w{3})mlb_(?P<team_home>\w{3})mlb_1/game_events.plist';
-
-MLB_MP4_FORMAT = 'http://mediadownloads.mlb.com/mlbam/{year}/{month}/{day}/mlbtv_{team_away}{team_home}_{content_id}_1800K.mp4'
-
 # Used to find true URL instead of inferring date
-# MLB_HIGHLIGHTS_XML_FORMAT = 'http://gd2.mlb.com/components/game/mlb/year_{year}/month_{month}/day_{day}/gid_{year}_{month}_{day}_{team_away}mlb_{team_home}mlb_1/media/highlights.xml'
 MLB_VIDEO_XML_FORMAT = 'http://mlb.com/gen/multimedia/detail/{first}/{second}/{third}/{content_id}.xml'
 
 # from https://www.reddit.com/user/Meowingtons-PhD/m/baseballmulti
@@ -98,10 +92,7 @@ _____________
 
 [More Info](https://www.reddit.com/r/MLBVideoConverterBot)'''.format(comment)
 
-iteration = 0
-while True:
-    print "Iteration: {}".format(iteration)
-    iteration += 1
+def find_mlb_links():
     subreddits = [(subreddit, primary_limit) for subreddit in primary_subreddits]
     subreddits += [("+".join(secondary_subreddits[i:i+group_size]), group_limit) for i in range(0, len(secondary_subreddits), group_size)]
     for subreddit, limit in subreddits:
@@ -143,5 +134,15 @@ while True:
                     cursor.execute("INSERT INTO comments (hash_id) VALUES ('{}');".format(comment.id))
                     conn.commit()
 
-    print "Done with iteration"
+iteration = 0
+while True:
+    start_time = time.time() 
+    print "Iteration: {}".format(iteration)
+    iteration += 1
+    try:
+        find_mlb_links()
+        print "Done with iteration.  Time to run: {}".format(time.time()-start_time)
+    except Exception, e:
+        print "Error: {}".format(e)
+        pass
     time.sleep(300)
