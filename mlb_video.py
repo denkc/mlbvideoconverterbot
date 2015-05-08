@@ -144,7 +144,7 @@ def bot():
         try:
             comments = praw.helpers.flatten_tree(submission.comments)
         except:
-            print "error encountered getting comments for {}.{}".format(subreddit, submission.id)
+            print "error encountered getting comments for http://redd.it/{}".format(submission.id)
             continue
         for comment in praw.helpers.flatten_tree(submission.comments):
             if check_hash_exists('comments', comment.id, cursor):
