@@ -24,7 +24,7 @@ MLB_PATTERNS = [
 MLB_VIDEO_XML_FORMAT = 'http://mlb.com/gen/multimedia/detail/{first}/{second}/{third}/{content_id}.xml'
 
 # from https://www.reddit.com/user/Meowingtons-PhD/m/baseballmulti
-primary_subreddits = ['baseball', 'fantasybaseball']
+primary_subreddits = ['baseball', 'fantasybaseball', 'mlbvideoconverterbot']
 secondary_subreddits = ['angelsbaseball', 'astros', 'azdiamondbacks', 'braves', 'brewers', 'buccos', 'cardinals', 'chicubs', 'coloradorockies', 'dodgers', 'expos', 'kcroyals', 'letsgofish', 'mariners', 'minnesotatwins', 'motorcitykitties', 'nationals', 'newyorkmets', 'nyyankees', 'oaklandathletics', 'orioles', 'padres', 'phillies', 'reds', 'redsox', 'sfgiants', 'tampabayrays', 'texasrangers', 'torontobluejays', 'wahoostipi', 'whitesox']
 # ['ballparks', 'baseballcards', 'baseballcirclejerk', 'baseballmuseum', 'baseballstats', 'collegebaseball', 'mlbdraft', 'sabermetrics', 'sultansofstats', 'wbc']
 
@@ -46,10 +46,19 @@ def find_mlb_links(text):
         matches = re.finditer(mlb_pattern, text)
         for match in matches:
             content_id = match.group('content_id')
-            print "match {} found: {}".format(content_id, text)
+            print "    match {} found: {}".format(content_id, text)
             matched_content_ids.append(content_id)
 
-    return [get_media_for_content_id(content_id) for content_id in matched_content_ids]
+    formatted_comments = []
+    for matched_content_id in matched_content_ids:
+        media_link = get_media_for_content_id(matched_content_id)
+        if not media_link:
+            print "    no media link found for {}".format(matched_content_id)
+            continue
+        size_mb = round(float(requests.head(media_link).headers['content-length'])/(1024**2), 2)
+        formatted_comments.append("{} ({} MB)".format(media_link, size_mb))
+
+    return formatted_comments
 
 def get_media_for_content_id(content_id):
     url = MLB_VIDEO_XML_FORMAT.format(**{
@@ -59,6 +68,10 @@ def get_media_for_content_id(content_id):
         "content_id": content_id
     })
     tree = ElementTree.fromstring(requests.get(url).content)
+    keyword = tree.find('keywords').find('keyword[@type="subject"]')
+    if keyword.get('value') == 'MLBCOM_CONDENSED_GAME':
+        return None
+
     media_tags = tree.findall('url[@playback_scenario]')
 
     largest_mp4_size = 0
