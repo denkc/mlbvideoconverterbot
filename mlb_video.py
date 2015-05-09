@@ -51,12 +51,12 @@ def find_mlb_links(text):
 
     formatted_comments = []
     for matched_content_id in matched_content_ids:
-        media_link = get_media_for_content_id(matched_content_id)
+        media_link, title = get_media_for_content_id(matched_content_id)
         if not media_link:
             print "    no media link found for {}".format(matched_content_id)
             continue
         size_mb = round(float(requests.head(media_link).headers['content-length'])/(1024**2), 2)
-        formatted_comments.append("{} ({} MB)".format(media_link, size_mb))
+        formatted_comments.append("[{}]({}) ({} MB)".format(title, media_link, size_mb))
 
     return formatted_comments
 
@@ -72,6 +72,7 @@ def get_media_for_content_id(content_id):
     if keyword.get('value') == 'MLBCOM_CONDENSED_GAME':
         return None
 
+    title = tree.find('blurb').text
     media_tags = tree.findall('url[@playback_scenario]')
 
     largest_mp4_size = 0
@@ -85,7 +86,7 @@ def get_media_for_content_id(content_id):
                 largest_mp4_size = mp4_size
                 largest_mp4_url = media_tag.text
 
-    return largest_mp4_url
+    return largest_mp4_url, title
 
 def connect_to_db(create=False):
     conn = psycopg2.connect(
