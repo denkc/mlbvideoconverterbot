@@ -15,13 +15,12 @@ r = praw.Reddit(user_agent="mlbvideoconverter")
 r.login('MLBVideoConverterBot', '&ai#n^ky86dQ')  # os.environ['REDDIT_USER'], os.environ['REDDIT_PASS'])
 
 MLB_PATTERNS = [
-    r'mlb.mlb.com/mlb/.*content_id=(?P<content_id>\d+)',
-    r'mlb.com/(?:\w{2,3}/)?video/(?:topic/\d+/)?v(?P<content_id>\d+)/',
-    r'www.mlb.com/r/video\?.*content_id=(?P<content_id>\d+)'
+    r'(?P<domain>mi?lb).com/(?:\w{2,3}/)?video/(?:topic/\d+/)?v(?P<content_id>\d+)/',
+    r'(?P<domain>mi?lb).com/.*content_id=(?P<content_id>\d+)'
 ]
 
 # Used to find true URL instead of inferring date
-MLB_VIDEO_XML_FORMAT = 'http://mlb.com/gen/multimedia/detail/{first}/{second}/{third}/{content_id}.xml'
+MLB_VIDEO_XML_FORMAT = 'http://www.{domain}.com/gen/multimedia/detail/{first}/{second}/{third}/{content_id}.xml'
 
 # from https://www.reddit.com/user/Meowingtons-PhD/m/baseballmulti
 primary_subreddits = ['baseball', 'fantasybaseball', 'mlbvideoconverterbot']
@@ -40,28 +39,33 @@ group_limit = 100
 def find_mlb_links(text):
     text = text.encode('utf-8')
 
-    matched_content_ids = []
+    re_matches = []
 
     for mlb_pattern in MLB_PATTERNS:
         matches = re.finditer(mlb_pattern, text)
         for match in matches:
-            content_id = match.group('content_id')
-            print "    match {} found: {}".format(content_id, text)
-            matched_content_ids.append(content_id)
+            print "    match {} found: {}".format(match.groupdict(), text)
+            re_matches.append(match)
 
     formatted_comments = []
-    for matched_content_id in matched_content_ids:
-        media_link, title = get_media_for_content_id(matched_content_id)
-        if not media_link:
-            print "    no media link found for {}".format(matched_content_id)
-            continue
-        size_mb = round(float(requests.head(media_link).headers['content-length'])/(1024**2), 2)
-        formatted_comments.append("[{}]({}) ({} MB)".format(title, media_link, size_mb))
+    for match in re_matches:
+        media_links = get_media_for_content_id(match)
+        title = media_links['title']
+        formatted_comments.append("Video: {}".format(title))
+        for media_link, link_text in media_links['media']:
+            if not media_link:
+                print "    no media link found for {}".format(match.group('content_id'))
+                continue
+            size_mb = round(float(requests.head(media_link).headers['content-length'])/(1024**2), 2)
+            formatted_comments.append("[{}]({}) ({} MB)".format(link_text, media_link, size_mb))
+        formatted_comments.append("___________")
 
     return formatted_comments
 
-def get_media_for_content_id(content_id):
+def get_media_for_content_id(match):
+    content_id = match.group('content_id')
     url = MLB_VIDEO_XML_FORMAT.format(**{
+        "domain": match.group('domain'),
         "first": content_id[-3],
         "second": content_id[-2],
         "third": content_id[-1],
@@ -75,6 +79,11 @@ def get_media_for_content_id(content_id):
     title = tree.find('blurb').text
     media_tags = tree.findall('url[@playback_scenario]')
 
+
+    small_mp4_size = 0
+    small_mp4_threshold = 640
+    small_mp4_url = None
+
     largest_mp4_size = 0
     largest_mp4_url = None
 
@@ -85,8 +94,20 @@ def get_media_for_content_id(content_id):
             if mp4_size > largest_mp4_size:
                 largest_mp4_size = mp4_size
                 largest_mp4_url = media_tag.text
+            if small_mp4_threshold > mp4_size > small_mp4_size:
+                small_mp4_size = mp4_size
+                small_mp4_url = media_tag.text
 
-    return largest_mp4_url, title
+    if small_mp4_size == largest_mp4_size:
+        largest_mp4_text = "MP4 Video"
+    else:
+        largest_mp4_text = "Larger Version"
+
+    media = {"title": title, "media": [(largest_mp4_url, largest_mp4_text)]}
+    if small_mp4_size != largest_mp4_size:
+        media['media'].append((small_mp4_url, 'Smaller Version'))
+ 
+    return media
 
 def connect_to_db(create=False):
     conn = psycopg2.connect(
@@ -111,10 +132,8 @@ def check_hash_exists(table_name, hash_id, cursor):
 
 def comment_text(comment):
     return '''{}
-_____________
-[Report broken link](https://www.reddit.com/message/compose/?to=MLBVideoConverterBot)
 
-[More Info](https://www.reddit.com/r/MLBVideoConverterBot)'''.format(comment)
+[More Info](/r/MLBVideoConverterBot)'''.format(comment)
 
 def subreddit_submissions(subreddits):
     for subreddit, limit in subreddits:
