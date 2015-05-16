@@ -1,18 +1,17 @@
-import datetime
 import itertools
-import json
 import re
 import time
 from xml.etree import ElementTree
 
-from bs4 import BeautifulSoup
 import praw
 import praw.helpers
-import psycopg2
 import requests
 
-r = praw.Reddit(user_agent="mlbvideoconverter")
-r.login('MLBVideoConverterBot', '&ai#n^ky86dQ')  # os.environ['REDDIT_USER'], os.environ['REDDIT_PASS'])
+import config
+import db
+
+r = praw.Reddit(user_agent=config.REDDIT_USERAGENT)
+r.login(config.REDDIT_USER, config.REDDIT_PASS)
 
 MLB_PATTERNS = [
     r'(?P<domain>mi?lb).com/(?:\w{2,3}/)?video/(?:topic/\d+/)?v(?P<content_id>\d+)/',
@@ -50,11 +49,13 @@ def find_mlb_links(text):
     formatted_comments = []
     for match in re_matches:
         media_links = get_media_for_content_id(match)
+        if not media_links:
+            print "    no media link found for {}".format(match.group('content_id'))
+            continue
         title = media_links['title']
         formatted_comments.append("Video: {}".format(title))
         for media_link, link_text in media_links['media']:
             if not media_link:
-                print "    no media link found for {}".format(match.group('content_id'))
                 continue
             size_mb = round(float(requests.head(media_link).headers['content-length'])/(1024**2), 2)
             formatted_comments.append("[{}]({}) ({} MB)".format(link_text, media_link, size_mb))
@@ -71,10 +72,15 @@ def get_media_for_content_id(match):
         "third": content_id[-1],
         "content_id": content_id
     })
-    tree = ElementTree.fromstring(requests.get(url).content)
+    try:
+        tree = ElementTree.fromstring(requests.get(url).content)
+    except Exception, e:
+        print "    error parsing/receiving XML from url {}".format(url)
+        return {}
+
     keyword = tree.find('keywords').find('keyword[@type="subject"]')
     if keyword.get('value') == 'MLBCOM_CONDENSED_GAME':
-        return None
+        return {}
 
     title = tree.find('blurb').text
     media_tags = tree.findall('url[@playback_scenario]')
@@ -98,37 +104,16 @@ def get_media_for_content_id(match):
                 small_mp4_size = mp4_size
                 small_mp4_url = media_tag.text
 
-    if small_mp4_size == largest_mp4_size:
+    if small_mp4_size == largest_mp4_size or small_mp4_url is None:
         largest_mp4_text = "MP4 Video"
     else:
         largest_mp4_text = "Larger Version"
 
     media = {"title": title, "media": [(largest_mp4_url, largest_mp4_text)]}
-    if small_mp4_size != largest_mp4_size:
+    if small_mp4_size != largest_mp4_size and small_mp4_url is not None:
         media['media'].append((small_mp4_url, 'Smaller Version'))
  
     return media
-
-def connect_to_db(create=False):
-    conn = psycopg2.connect(
-        host='localhost',  # os.environ['DB_HOST'],
-        dbname='mlb',
-        user='postgres',  # os.environ['DB_USER'],
-        password="Don't1stop2me3now"  # os.environ['DB_PASSWORD']
-    )
-    cursor = conn.cursor()
-    if create:
-        #cursor.execute("CREATE DATABASE IF NOT EXISTS mlb")
-        cursor.execute("CREATE TABLE IF NOT EXISTS submissions (hash_id varchar PRIMARY KEY)")
-        cursor.execute("CREATE TABLE IF NOT EXISTS comments (hash_id varchar PRIMARY KEY)")
-        conn.commit()
-
-    return conn, cursor
-
-def check_hash_exists(table_name, hash_id, cursor):
-    cursor.execute("SELECT hash_id FROM {} WHERE hash_id = '{}';".format(table_name, hash_id))
-    match = cursor.fetchone()
-    return match
 
 def comment_text(comment):
     return '''{}
@@ -156,13 +141,13 @@ def domain_submissions(domains):
             continue
 
 def bot():
-    conn, cursor = connect_to_db()
+    conn, cursor = db.connect_to_db()
     subreddits = [(subreddit, primary_limit) for subreddit in primary_subreddits]
     subreddits += [("+".join(secondary_subreddits[i:i+group_size]), group_limit) for i in range(0, len(secondary_subreddits), group_size)]
     domains = [(domain, primary_limit) for domain in primary_domains]
 
     for submission in itertools.chain(subreddit_submissions(subreddits), domain_submissions(domains)):
-        if not check_hash_exists('submissions', submission.id, cursor):
+        if not db.check_hash_exists('submissions', submission.id, cursor):
             if submission.is_self:
                 mlb_links = find_mlb_links(submission.selftext)
             else:
@@ -180,7 +165,7 @@ def bot():
             print "error encountered getting comments for http://redd.it/{}".format(submission.id)
             continue
         for comment in praw.helpers.flatten_tree(submission.comments):
-            if check_hash_exists('comments', comment.id, cursor):
+            if db.check_hash_exists('comments', comment.id, cursor):
                 continue
 
             if comment.__class__.__name__ == 'MoreComments':
@@ -202,6 +187,7 @@ while True:
         bot()
         print "Done with iteration.  Time to run: {}".format(time.time()-start_time)
     except Exception, e:
+        import sys, traceback; ex_type, ex, tb = sys.exc_info(); traceback.print_tb(tb)
         print "Error: {}".format(e)
         pass
     time.sleep(300)
