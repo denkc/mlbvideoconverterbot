@@ -1,8 +1,16 @@
+import urlparse
+
 REDDIT_USERAGENT = 'mlbvideoconverter'
 REDDIT_USER='MLBVideoConverterBot'
 REDDIT_PASS='&ai#n^ky86dQ'
 
-DB_HOST='localhost'
-DB_NAME='mlb'
-DB_USER='postgres'
-DB_PASS="Don't1stop2me3now"
+url = urlparse.urlparse(os.environ["DATABASE_URL"])
+
+DB = {
+    'database': url.path[1:],
+    'user': url.username,
+    'password': url.password,
+    'host': url.hostname,
+    'port': url.port
+}
+
