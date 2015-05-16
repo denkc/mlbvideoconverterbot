@@ -1,134 +1,193 @@
-import datetime
-import json
+import itertools
 import re
 import time
+from xml.etree import ElementTree
 
-from bs4 import BeautifulSoup
 import praw
-import psycopg2
+import praw.helpers
 import requests
 
-r = praw.Reddit(user_agent="mlbvideoconverter")
-r.login(os.environ['REDDIT_USER'], os.environ['REDDIT_PASS'])
+import config
+import db
 
-MLB_DESKTOP_PATTERN = r'http://mlb.mlb.com/mlb/.*content_id=(?P<content_id>\d+)'
-MLB_MOBILE_PATTERN = r'mlb.com/(?:\w{2,3}/)?video/(?:topic/\d+/)?v(?P<content_id>\d+)/'
+r = praw.Reddit(user_agent=config.REDDIT_USERAGENT)
+r.login(config.REDDIT_USER, config.REDDIT_PASS)
 
-MLB_MOBILE_META_IMAGE_PATTERN = r'http://mediadownloads.mlb.com/mlbam/(?P<year>\d{4})/(?P<month>\d{2})/(?P<day>\d{2})/images/mlb.*\.jpg'
-MLB_MOBILE_FEATURED_VIDEOS_PATTERN = r'(?P<team_away>\w{3})mlb_(?P<team_home>\w{3})mlb_1/game_events.plist';
+MLB_PATTERNS = [
+    r'(?P<domain>mi?lb).com/(?:\w{2,3}/)?video/(?:topic/\d+/)?v(?P<content_id>\d+)/',
+    r'(?P<domain>mi?lb).com/.*content_id=(?P<content_id>\d+)'
+]
 
-MLB_MOBILE_URL_FORMAT = 'http://m.mlb.com/video/v{content_id}/'
-MLB_MP4_FORMAT = 'http://mediadownloads.mlb.com/mlbam/{year}/{month}/{day}/mlbtv_{team_away}{team_home}_{content_id}_1800K.mp4'
-
-# Not currently used but useful
-# MLB_HIGHLIGHTS_XML_FORMAT = 'http://gd2.mlb.com/components/game/mlb/year_{year}/month_{month}/day_{day}/gid_{year}_{month}_{day}_{team_away}mlb_{team_home}mlb_1/media/highlights.xml'
+# Used to find true URL instead of inferring date
+MLB_VIDEO_XML_FORMAT = 'http://www.{domain}.com/gen/multimedia/detail/{first}/{second}/{third}/{content_id}.xml'
 
 # from https://www.reddit.com/user/Meowingtons-PhD/m/baseballmulti
-# subreddits = ['mlbvideoconverterbot']
-subreddits = ['angelsbaseball', 'astros', 'azdiamondbacks', 'ballparks', 'baseball', 'baseballcards', 'baseballcirclejerk', 'baseballmuseum', 'baseballstats', 'braves', 'brewers', 'buccos', 'cardinals', 'chicubs', 'collegebaseball', 'coloradorockies', 'dodgers', 'expos', 'fantasybaseball', 'kcroyals', 'letsgofish', 'mariners', 'minnesotatwins', 'mlbdraft', 'motorcitykitties', 'nationals', 'newyorkmets', 'nyyankees', 'oaklandathletics', 'orioles', 'padres', 'phillies', 'reds', 'redsox', 'sabermetrics', 'sfgiants', 'sultansofstats', 'tampabayrays', 'texasrangers', 'torontobluejays', 'wahoostipi', 'wbc', 'whitesox']
-limit = 26
+primary_subreddits = ['baseball', 'fantasybaseball', 'mlbvideoconverterbot']
+secondary_subreddits = ['angelsbaseball', 'astros', 'azdiamondbacks', 'braves', 'brewers', 'buccos', 'cardinals', 'chicubs', 'coloradorockies', 'dodgers', 'expos', 'kcroyals', 'letsgofish', 'mariners', 'minnesotatwins', 'motorcitykitties', 'nationals', 'newyorkmets', 'nyyankees', 'oaklandathletics', 'orioles', 'padres', 'phillies', 'reds', 'redsox', 'sfgiants', 'tampabayrays', 'texasrangers', 'torontobluejays', 'wahoostipi', 'whitesox']
+# ['ballparks', 'baseballcards', 'baseballcirclejerk', 'baseballmuseum', 'baseballstats', 'collegebaseball', 'mlbdraft', 'sabermetrics', 'sultansofstats', 'wbc']
 
-def convert_mlb_link(text):
-    desktop_match = re.search(MLB_DESKTOP_PATTERN, text)
-    mobile_match = re.search(MLB_MOBILE_PATTERN, text)
+primary_domains = ['mlb.com']
 
-    if desktop_match:
-        format_params = desktop_match.groupdict()
-    elif mobile_match:
-        format_params = mobile_match.groupdict()
+# testing override
+# primary_subreddits = ['mlbvideoconverterbot']; secondary_subreddits = []; primary_domains = []
+
+primary_limit = 26
+group_size = 16
+group_limit = 100
+
+def find_mlb_links(text):
+    text = text.encode('utf-8')
+
+    re_matches = []
+
+    for mlb_pattern in MLB_PATTERNS:
+        matches = re.finditer(mlb_pattern, text)
+        for match in matches:
+            print "    match {} found: {}".format(match.groupdict(), text)
+            re_matches.append(match)
+
+    formatted_comments = []
+    for match in re_matches:
+        media_links = get_media_for_content_id(match)
+        if not media_links:
+            print "    no media link found for {}".format(match.group('content_id'))
+            continue
+        title = media_links['title']
+        formatted_comments.append("Video: {}".format(title))
+        for media_link, link_text in media_links['media']:
+            if not media_link:
+                continue
+            size_mb = round(float(requests.head(media_link).headers['content-length'])/(1024**2), 2)
+            formatted_comments.append("[{}]({}) ({} MB)".format(link_text, media_link, size_mb))
+        formatted_comments.append("___________")
+
+    return formatted_comments
+
+def get_media_for_content_id(match):
+    content_id = match.group('content_id')
+    url = MLB_VIDEO_XML_FORMAT.format(**{
+        "domain": match.group('domain'),
+        "first": content_id[-3],
+        "second": content_id[-2],
+        "third": content_id[-1],
+        "content_id": content_id
+    })
+    try:
+        tree = ElementTree.fromstring(requests.get(url).content)
+    except Exception, e:
+        print "    error parsing/receiving XML from url {}".format(url)
+        return {}
+
+    keyword = tree.find('keywords').find('keyword[@type="subject"]')
+    if keyword.get('value') == 'MLBCOM_CONDENSED_GAME':
+        return {}
+
+    title = tree.find('blurb').text
+    media_tags = tree.findall('url[@playback_scenario]')
+
+
+    small_mp4_size = 0
+    small_mp4_threshold = 640
+    small_mp4_url = None
+
+    largest_mp4_size = 0
+    largest_mp4_url = None
+
+    for media_tag in media_tags:
+        mp4_size_match = re.search('_(?P<mp4_size>\d+)K\.mp4', media_tag.text)
+        if mp4_size_match is not None:
+            mp4_size = int(mp4_size_match.group('mp4_size'))
+            if mp4_size > largest_mp4_size:
+                largest_mp4_size = mp4_size
+                largest_mp4_url = media_tag.text
+            if small_mp4_threshold > mp4_size > small_mp4_size:
+                small_mp4_size = mp4_size
+                small_mp4_url = media_tag.text
+
+    if small_mp4_size == largest_mp4_size or small_mp4_url is None:
+        largest_mp4_text = "MP4 Video"
     else:
-        return None
+        largest_mp4_text = "Larger Version"
 
-    url = MLB_MOBILE_URL_FORMAT.format(**format_params)
-
-    # Get data from meta/script
-    soup = BeautifulSoup(requests.get(url).content)
-    # looking for system date of the game
-    for meta in soup.find_all('meta'):
-        if meta.get('name') == 'description' and 'condensed game' in meta['content'].lower():
-            print "    condensed game link; skipping: {}".format(text)
-            return None
-        if meta.get('itemprop') == 'image':
-            meta_img_match = re.match(MLB_MOBILE_META_IMAGE_PATTERN, meta['content'])  
-            format_params.update(meta_img_match.groupdict())
-            break
-    else:
-        print "    matching link but could not find date: {}".format(text)
-    # looking for exact home/away team names
-    for script in soup.find_all('script'):
-        if 'featuredVideoLists' in script.get_text():
-            video_match = re.search(MLB_MOBILE_FEATURED_VIDEOS_PATTERN, script.get_text())
-            if video_match:
-                format_params.update(video_match.groupdict())
-                break
-    else:
-        print "    matching link but could not find team names: {}".format(text)
-
-    print "    match found: {}".format(text) 
-   
-    return MLB_MP4_FORMAT.format(**format_params)
-
-conn = psycopg2.connect(
-    host=os.environ['DB_HOST'],
-    dbname='mlb',
-    user=os.environ['DB_USER'],
-    password=os.environ['DB_PASSWORD']
-)
-cursor = conn.cursor()
-cursor.execute("CREATE DATABASE IF NOT EXISTS mlb")
-cursor.execute("CREATE TABLE IF NOT EXISTS submissions (hash_id varchar PRIMARY KEY)")
-cursor.execute("CREATE TABLE IF NOT EXISTS comments (hash_id varchar PRIMARY KEY)")
-conn.commit()
-
-def check_hash_exists(table_name, hash_id):
-    cursor.execute("SELECT hash_id FROM {} WHERE hash_id = '{}';".format(table_name, hash_id))
-    match = cursor.fetchone()
-    return match
+    media = {"title": title, "media": [(largest_mp4_url, largest_mp4_text)]}
+    if small_mp4_size != largest_mp4_size and small_mp4_url is not None:
+        media['media'].append((small_mp4_url, 'Smaller Version'))
+ 
+    return media
 
 def comment_text(comment):
     return '''{}
-_____________
-[Report broken link](https://www.reddit.com/message/compose/?to=MLBVideoConverterBot)
 
-[More Info](https://www.reddit.com/r/MLBVideoConverterBot)'''.format(comment)
+[More Info](/r/MLBVideoConverterBot)'''.format(comment)
 
-iteration = 0
-while True:
-    print "Iteration: {}".format(iteration)
-    iteration += 1
-    for subreddit in subreddits:
-        print "  Checking {}".format(subreddit)
+def subreddit_submissions(subreddits):
+    for subreddit, limit in subreddits:
         try:
-            submissions = r.get_subreddit(subreddit).get_hot(limit=limit)
+            print "  Checking {}".format(subreddit)
+            for submission in r.get_subreddit(subreddit).get_hot(limit=limit):
+                yield submission
         except:
             print "error encountered getting submissions for {}.".format(subreddit)
             continue
 
-        for submission in submissions:
-            if check_hash_exists('submissions', submission.id):
-                continue
+def domain_submissions(domains):
+    for domain, limit in domains:
+        try:
+            print "  Checking {}".format(domain)
+            for submission in r.get_domain_listing(domain, limit=limit):
+                yield submission
+        except:
+            print "error encountered getting submissions for domain {}.".format(domain)
+            continue
 
+def bot():
+    conn, cursor = db.connect_to_db()
+    subreddits = [(subreddit, primary_limit) for subreddit in primary_subreddits]
+    subreddits += [("+".join(secondary_subreddits[i:i+group_size]), group_limit) for i in range(0, len(secondary_subreddits), group_size)]
+    domains = [(domain, primary_limit) for domain in primary_domains]
+
+    for submission in itertools.chain(subreddit_submissions(subreddits), domain_submissions(domains)):
+        if not db.check_hash_exists('submissions', submission.id, cursor):
             if submission.is_self:
-                mlb_link = convert_mlb_link(submission.selftext)
+                mlb_links = find_mlb_links(submission.selftext)
             else:
-                mlb_link = convert_mlb_link(submission.url)
+                mlb_links = find_mlb_links(submission.url)
 
-            if not mlb_link:
+            if mlb_links:
+                submission.add_comment(comment_text("\n\n".join(mlb_links)))
+                cursor.execute("INSERT INTO submissions (hash_id) VALUES ('{}');".format(submission.id))
+                conn.commit()
+
+        # submission.replace_more_comments(limit=None, threshold=0)
+        try:
+            comments = praw.helpers.flatten_tree(submission.comments)
+        except:
+            print "error encountered getting comments for http://redd.it/{}".format(submission.id)
+            continue
+        for comment in praw.helpers.flatten_tree(submission.comments):
+            if db.check_hash_exists('comments', comment.id, cursor):
                 continue
 
-            submission.add_comment(comment_text(mlb_link))
-            cursor.execute("INSERT INTO submissions (hash_id) VALUES ('{}');".format(submission.id))
-            conn.commit()
+            if comment.__class__.__name__ == 'MoreComments':
+                continue
 
-            for comment in submission.comments:
-                if check_hash_exists('comments', comment.id):
-                    continue
+            mlb_links = find_mlb_links(comment.body)
+            if mlb_links:
+                comment.reply(comment_text("\n\n".join(mlb_links)))
+                cursor.execute("INSERT INTO comments (hash_id) VALUES ('{}');".format(comment.id))
+                conn.commit()
+    conn.close()
 
-                mlb_link = convert_mlb_link(comment.body)
-                if mlb_link:
-                    comment.reply(comment_text(mlb_link))
-                    cursor.execute("INSERT INTO comments (hash_id) VALUES ('{}');".format(comment.id))
-                    conn.commit()
-
-    print "Done with iteration"
+iteration = 0
+while True:
+    start_time = time.time() 
+    print "Iteration: {}".format(iteration)
+    iteration += 1
+    try:
+        bot()
+        print "Done with iteration.  Time to run: {}".format(time.time()-start_time)
+    except Exception, e:
+        import sys, traceback; ex_type, ex, tb = sys.exc_info(); traceback.print_tb(tb)
+        print "Error: {}".format(e)
+        pass
     time.sleep(300)
