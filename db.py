@@ -3,12 +3,7 @@ import psycopg2
 import config
 
 def connect_to_db(create=False):
-    conn = psycopg2.connect(
-        host=config.DB_HOST,
-        dbname=config.DB_NAME,
-        user=config.DB_USER,
-        password=config.DB_PASS
-    )
+    conn = psycopg2.connect(**config.DB)
     cursor = conn.cursor()
     if create:
         #cursor.execute("CREATE DATABASE IF NOT EXISTS mlb")
