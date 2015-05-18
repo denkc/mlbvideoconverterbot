@@ -21,6 +21,11 @@ MLB_PATTERNS = [
 # Used to find true URL instead of inferring date
 MLB_VIDEO_XML_FORMAT = 'http://www.{domain}.com/gen/multimedia/detail/{first}/{second}/{third}/{content_id}.xml'
 
+MLB_XML_IGNORED_SUBJECTS = [
+    'MLBCOM_CONDENSED_GAME',
+    'LIVE_EVENT_COVERAGE'
+]
+
 # from https://www.reddit.com/user/Meowingtons-PhD/m/baseballmulti
 primary_subreddits = ['baseball', 'fantasybaseball', 'mlbvideoconverterbot']
 secondary_subreddits = ['angelsbaseball', 'astros', 'azdiamondbacks', 'braves', 'brewers', 'buccos', 'cardinals', 'chicubs', 'coloradorockies', 'dodgers', 'expos', 'kcroyals', 'letsgofish', 'mariners', 'minnesotatwins', 'motorcitykitties', 'nationals', 'newyorkmets', 'nyyankees', 'oaklandathletics', 'orioles', 'padres', 'phillies', 'reds', 'redsox', 'sfgiants', 'tampabayrays', 'texasrangers', 'torontobluejays', 'wahoostipi', 'whitesox']
@@ -79,7 +84,7 @@ def get_media_for_content_id(match):
         return {}
 
     keyword = tree.find('keywords').find('keyword[@type="subject"]')
-    if keyword.get('value') == 'MLBCOM_CONDENSED_GAME':
+    if keyword.get('value') in MLB_XML_IGNORED_SUBJECTS:
         return {}
 
     title = tree.find('blurb').text
