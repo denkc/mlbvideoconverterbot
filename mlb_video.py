@@ -14,7 +14,7 @@ r = praw.Reddit(user_agent=config.REDDIT_USERAGENT)
 r.login(config.REDDIT_USER, config.REDDIT_PASS)
 
 MLB_PATTERNS = [
-    r'(?P<domain>mi?lb).com/(?:\w{2,3}/)?video/(?:topic/\d+/)?v(?P<content_id>\d+)/',
+    r'(?P<domain>mi?lb).com/(?:\w{2,3}/)?video/(?:topic/\d+/)?v(?P<content_id>\d+)',
     r'(?P<domain>mi?lb).com/.*content_id=(?P<content_id>\d+)'
 ]
 
