@@ -60,8 +60,6 @@ def find_mlb_links(text):
         title = media_links['title']
         formatted_comments.append("Video: {}".format(title))
         for media_link, link_text in media_links['media']:
-            if not media_link:
-                continue
             size_mb = round(float(requests.head(media_link).headers['content-length'])/(1024**2), 2)
             formatted_comments.append("[{}]({}) ({} MB)".format(link_text, media_link, size_mb))
         formatted_comments.append("___________")
@@ -108,6 +106,10 @@ def get_media_for_content_id(match):
             if small_mp4_threshold > mp4_size > small_mp4_size:
                 small_mp4_size = mp4_size
                 small_mp4_url = media_tag.text
+
+    # Need to match at least one else return nothing
+    if largest_mp4_url is None:
+        return {}
 
     if small_mp4_size == largest_mp4_size or small_mp4_url is None:
         largest_mp4_text = "MP4 Video"
