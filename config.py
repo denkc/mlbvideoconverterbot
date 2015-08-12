@@ -1,4 +1,3 @@
-import os
 import urlparse
 
 REDDIT_USERAGENT = 'mlbvideoconverter'

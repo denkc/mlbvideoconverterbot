@@ -18,6 +18,10 @@ MLB_PATTERNS = [
     r'(?P<domain>mi?lb).com/.*content_id=(?P<content_id>\d+)'
 ]
 
+SHORTURL_PATTERNS = [
+    r'(?:https?://)?(?P<url>atmlb.com\S+)'
+]
+
 # Used to find true URL instead of inferring date
 MLB_VIDEO_XML_FORMAT = 'http://www.{domain}.com/gen/multimedia/detail/{first}/{second}/{third}/{content_id}.xml'
 
@@ -31,10 +35,10 @@ primary_subreddits = ['baseball', 'fantasybaseball', 'mlbvideoconverterbot']
 secondary_subreddits = ['angelsbaseball', 'astros', 'azdiamondbacks', 'braves', 'brewers', 'buccos', 'cardinals', 'chicubs', 'coloradorockies', 'dodgers', 'expos', 'kcroyals', 'letsgofish', 'mariners', 'minnesotatwins', 'motorcitykitties', 'nationals', 'newyorkmets', 'nyyankees', 'oaklandathletics', 'orioles', 'padres', 'phillies', 'reds', 'redsox', 'sfgiants', 'tampabayrays', 'texasrangers', 'torontobluejays', 'wahoostipi', 'whitesox']
 # ['ballparks', 'baseballcards', 'baseballcirclejerk', 'baseballmuseum', 'baseballstats', 'collegebaseball', 'mlbdraft', 'sabermetrics', 'sultansofstats', 'wbc']
 
-primary_domains = ['mlb.com']
+primary_domains = ['mlb.com', 'atmlb.com']
 
 # testing override
-# primary_subreddits = ['mlbvideoconverterbot']; secondary_subreddits = []; primary_domains = []
+primary_subreddits = ['mlbvideoconverterbot']; secondary_subreddits = []; primary_domains = []
 
 primary_limit = 26
 group_size = 16
@@ -42,6 +46,16 @@ group_limit = 100
 
 def find_mlb_links(text):
     text = text.encode('utf-8')
+
+    shorturl_text = ''
+    for shorturl_pattern in SHORTURL_PATTERNS:
+        matches = re.finditer(shorturl_pattern, text)
+        for match in matches:
+            shorturl_headers = requests.head('http://{}'.format(match.group('url')))
+            if shorturl_headers.status_code == 301:
+                shorturl_text += '{} '.format(shorturl_headers.headers['location'])
+
+    text += ' {}'.format(shorturl_text)
 
     re_matches = []
 
@@ -51,8 +65,13 @@ def find_mlb_links(text):
             print "    match {} found: {}".format(match.groupdict(), text)
             re_matches.append(match)
 
+    unique_content_id = set()
+
     formatted_comments = []
     for match in re_matches:
+        if match.group('content_id') in unique_content_id:
+            continue
+        unique_content_id.add(match.group('content_id'))
         media_links = get_media_for_content_id(match)
         if not media_links:
             print "    no media link found for {}".format(match.group('content_id'))
