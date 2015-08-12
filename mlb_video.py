@@ -38,7 +38,7 @@ secondary_subreddits = ['angelsbaseball', 'astros', 'azdiamondbacks', 'braves', 
 primary_domains = ['mlb.com', 'atmlb.com']
 
 # testing override
-primary_subreddits = ['mlbvideoconverterbot']; secondary_subreddits = []; primary_domains = []
+# primary_subreddits = ['mlbvideoconverterbot']; secondary_subreddits = []; primary_domains = []
 
 primary_limit = 26
 group_size = 16
