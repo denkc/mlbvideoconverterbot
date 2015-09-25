@@ -17,7 +17,7 @@ r.login(config.REDDIT_USER, config.REDDIT_PASS)
 MLB_PATTERNS = [
     r'(?P<domain>mi?lb).com/(?:\w{2,3}/)?video/(?:topic/\d+/)?v(?P<content_id>\d+)',
     r'(?P<domain>mi?lb).com/.*content_id=(?P<content_id>\d+)',
-    r'(?P<domain>mi?lb).com/tv/v(?P<content_id>\d+)'
+    r'(?P<domain>mi?lb).com/.*/v(?P<content_id>\d+)'
 ]
 
 SHORTURL_PATTERNS = [
