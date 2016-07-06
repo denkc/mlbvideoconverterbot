@@ -208,7 +208,8 @@ def bot():
 
             mlb_links = find_mlb_links(comment.body)
             if mlb_links:
-                comment.reply(comment_text("\n\n".join(mlb_links)))
+                for split_mlb_links in chunks(mlb_links, 20):
+                    comment.reply(comment_text("\n\n".join(split_mlb_links)))
                 cursor.execute("INSERT INTO comments (hash_id) VALUES ('{}');".format(comment.id))
                 conn.commit()
     conn.close()
