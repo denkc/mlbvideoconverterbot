@@ -193,7 +193,7 @@ def bot():
                 for split_mlb_links in chunks(mlb_links, 20):
                     comment_string = ''
                     for video_block_text in split_mlb_links:
-                        comment_string += "\n\n".join(video_block_text)
+                        comment_string += "\n\n".join(video_block_text) + "\n\n"
                     submission.add_comment(comment_text(comment_string))
                 cursor.execute("INSERT INTO submissions (hash_id) VALUES ('{}');".format(submission.id))
                 conn.commit()
@@ -216,7 +216,7 @@ def bot():
                 for split_mlb_links in chunks(mlb_links, 20):
                     comment_string = ''
                     for video_block_text in split_mlb_links:     
-                        comment_string += "\n\n".join(video_block_text)
+                        comment_string += "\n\n".join(video_block_text) + "\n\n"
                     comment.reply(comment_text(comment_string))
                 cursor.execute("INSERT INTO comments (hash_id) VALUES ('{}');".format(comment.id))
                 conn.commit()
