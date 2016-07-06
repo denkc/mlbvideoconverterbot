@@ -79,11 +79,13 @@ def find_mlb_links(text):
             print "    no media link found for {}".format(match.group('content_id'))
             continue
         title = media_links['title']
-        formatted_comments.append("Video: {}".format(title))
+        video_text_block = []
+        video_text_block.append("Video: {}".format(title))
         for media_link, link_text in media_links['media']:
             size_mb = round(float(requests.head(media_link).headers['content-length'])/(1024**2), 2)
-            formatted_comments.append("[{}]({}) ({} MB)".format(link_text, media_link, size_mb))
-        formatted_comments.append("___________")
+            video_text_block.append("[{}]({}) ({} MB)".format(link_text, media_link, size_mb))
+        video_text_block.append("___________")
+        formatted_comments.append(video_text_block)
 
     return formatted_comments
 
@@ -189,7 +191,10 @@ def bot():
 
             if mlb_links:
                 for split_mlb_links in chunks(mlb_links, 20):
-                    submission.add_comment(comment_text("\n\n".join(split_mlb_links)))
+                    comment_string = ''
+                    for video_block_text in split_mlb_links:
+                        comment_string += "\n\n".join(video_block_text)
+                    submission.add_comment(comment_text(comment_string))
                 cursor.execute("INSERT INTO submissions (hash_id) VALUES ('{}');".format(submission.id))
                 conn.commit()
 
@@ -209,7 +214,10 @@ def bot():
             mlb_links = find_mlb_links(comment.body)
             if mlb_links:
                 for split_mlb_links in chunks(mlb_links, 20):
-                    comment.reply(comment_text("\n\n".join(split_mlb_links)))
+                    comment_string = ''
+                    for video_block_text in split_mlb_links:     
+                        comment_string += "\n\n".join(video_block_text)
+                    comment.reply(comment_text(comment_string))
                 cursor.execute("INSERT INTO comments (hash_id) VALUES ('{}');".format(comment.id))
                 conn.commit()
     conn.close()
