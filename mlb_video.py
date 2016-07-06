@@ -168,6 +168,12 @@ def domain_submissions(domains):
             print "error encountered getting submissions for domain {}.".format(domain)
             continue
 
+# http://stackoverflow.com/a/312464/190597 (Ned Batchelder)
+def chunks(seq, n):
+    """ Yield successive n-sized chunks from seq."""
+    for i in xrange(0, len(seq), n):
+        yield seq[i:i + n]
+
 def bot():
     conn, cursor = db.connect_to_db()
     subreddits = [(subreddit, primary_limit) for subreddit in primary_subreddits]
@@ -182,7 +188,8 @@ def bot():
                 mlb_links = find_mlb_links(submission.url)
 
             if mlb_links:
-                submission.add_comment(comment_text("\n\n".join(mlb_links)))
+                for split_mlb_links in chunks(mlb_links, 20):
+                    submission.add_comment(comment_text("\n\n".join(split_mlb_links)))
                 cursor.execute("INSERT INTO submissions (hash_id) VALUES ('{}');".format(submission.id))
                 conn.commit()
 
