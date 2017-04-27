@@ -224,7 +224,14 @@ def bot():
                     comment_string = ''
                     for video_block_text in split_mlb_links:     
                         comment_string += "\n\n".join(video_block_text) + "\n\n"
-                    comment.reply(comment_text(comment_string))
+                    try:
+                        comment.reply(comment_text(comment_string))
+                    except Exception, e:
+                        import sys, traceback;
+                        ex_type, ex, tb = sys.exc_info();
+                        traceback.print_tb(tb)
+                        print "Error: {}".format(e)
+                        pass
                 cursor.execute("INSERT INTO comments (hash_id) VALUES ('{}');".format(comment.id))
                 conn.commit()
     conn.close()
