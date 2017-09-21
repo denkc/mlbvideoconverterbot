@@ -121,6 +121,8 @@ def get_media_for_content_id(match):
     largest_mp4_url = None
 
     for media_tag in media_tags:
+        if not media_tag.text:
+            continue
         mp4_size_match = re.search('_(?P<mp4_size>\d+)K\.mp4', media_tag.text)
         if mp4_size_match is not None:
             mp4_size = int(mp4_size_match.group('mp4_size'))
@@ -183,7 +185,7 @@ def bot():
     subreddits += [("+".join(secondary_subreddits[i:i+group_size]), group_limit) for i in range(0, len(secondary_subreddits), group_size)]
     domains = [(domain, primary_limit) for domain in primary_domains]
 
-    for submission in itertools.chain(subreddit_submissions(subreddits), domain_submissions(domains)):
+    for submission in itertools.chain(domain_submissions(domains), subreddit_submissions(subreddits)):
         if not db.check_hash_exists('submissions', submission.id, cursor):
             if submission.is_self:
                 mlb_links = find_mlb_links(submission.selftext)
