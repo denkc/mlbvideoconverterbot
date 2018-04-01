@@ -2,6 +2,7 @@ import re
 from xml.etree import ElementTree
 
 import praw
+from praw.models import Comment
 import requests
 
 import config
@@ -236,12 +237,14 @@ def main():
     submission_stream = subreddit.stream.submissions(pause_after=0)
 
     for comment in comment_stream:
-        if not check_comment(comment):
-            continue
+        check_comment(comment)
 
     for submission in submission_stream:
-        if not check_submission(submission):
-            continue
+        check_submission(submission)
+
+    for comment in reddit.inbox.unread(mark_read=True, limit=None):
+        if isinstance(comment, Comment):
+            check_comment(comment)
 
     #  No domain stream exists yet; check submissions the old fashioned way
     for submission in domain_submissions(domains):
