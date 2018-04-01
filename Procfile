@@ -1,1 +1,1 @@
-worker: python mlb_video.py
+worker: python reddit_bot.py

@@ -6,7 +6,7 @@ def connect_to_db(create=False):
     conn = psycopg2.connect(config.DB, sslmode='require')
     cursor = conn.cursor()
     if create:
-        #cursor.execute("CREATE DATABASE IF NOT EXISTS mlb")
+        cursor.execute("CREATE DATABASE IF NOT EXISTS mlb")
         cursor.execute("CREATE TABLE IF NOT EXISTS submissions (hash_id varchar PRIMARY KEY)")
         cursor.execute("CREATE TABLE IF NOT EXISTS comments (hash_id varchar PRIMARY KEY)")
         conn.commit()
