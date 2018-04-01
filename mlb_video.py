@@ -1,18 +1,20 @@
 import itertools
 import re
-import time
 from xml.etree import ElementTree
 
 import praw
-import praw.helpers
 import requests
 
 import config
 import db
 
-r = praw.Reddit(user_agent=config.REDDIT_USERAGENT)
-#r.set_oauth_app_info(client_id=config.CLIENT_ID, client_secret=config.CLIENT_SECRET, redirect_uri=config.REDIRECT_URI)
-r.login(config.REDDIT_USER, config.REDDIT_PASS)
+reddit = praw.Reddit(
+    user_agent=config.REDDIT_USERAGENT,
+    client_id=config.REDDIT_CLIENT_ID,
+    client_secret=config.REDDIT_CLIENT_SECRET,
+    username=config.REDDIT_USER,
+    password=config.REDDIT_PASS
+)
 
 MLB_PATTERNS = [
     r'(?P<domain>mi?lb).com/(?:\w{2,3}/)?video/(?:topic/\d+/)?v(?P<content_id>\d+)',
@@ -34,18 +36,19 @@ MLB_XML_IGNORED_SUBJECTS = [
 ]
 
 # from https://www.reddit.com/user/Meowingtons-PhD/m/baseballmulti
-primary_subreddits = ['baseball', 'fantasybaseball', 'mlbvideoconverterbot']
-secondary_subreddits = ['angelsbaseball', 'astros', 'azdiamondbacks', 'braves', 'brewers', 'buccos', 'cardinals', 'chicubs', 'coloradorockies', 'dodgers', 'expos', 'kcroyals', 'letsgofish', 'mariners', 'minnesotatwins', 'motorcitykitties', 'nationals', 'newyorkmets', 'nyyankees', 'oaklandathletics', 'orioles', 'padres', 'phillies', 'reds', 'redsox', 'sfgiants', 'tampabayrays', 'texasrangers', 'torontobluejays', 'wahoostipi', 'whitesox']
+subreddits = [
+    'baseball', 'fantasybaseball', 'mlbvideoconverterbot',
+    'angelsbaseball', 'astros', 'azdiamondbacks', 'braves', 'brewers', 'buccos', 'cardinals', 'chicubs',
+    'coloradorockies', 'dodgers', 'expos', 'kcroyals', 'letsgofish', 'mariners', 'minnesotatwins', 'motorcitykitties',
+    'nationals', 'newyorkmets', 'nyyankees', 'oaklandathletics', 'orioles', 'padres', 'phillies', 'reds', 'redsox',
+    'sfgiants', 'tampabayrays', 'texasrangers', 'torontobluejays', 'wahoostipi', 'whitesox'
+]
 # ['ballparks', 'baseballcards', 'baseballcirclejerk', 'baseballmuseum', 'baseballstats', 'collegebaseball', 'mlbdraft', 'sabermetrics', 'sultansofstats', 'wbc']
 
-primary_domains = ['mlb.com', 'atmlb.com']
+domains = ['mlb.com', 'atmlb.com']
 
 # testing override
 # primary_subreddits = ['mlbvideoconverterbot']; secondary_subreddits = []; primary_domains = []
-
-primary_limit = 26
-group_size = 16
-group_limit = 100
 
 def find_mlb_links(text):
     text = text.encode('utf-8')
@@ -148,26 +151,75 @@ def get_media_for_content_id(match):
  
     return media
 
+def reply(mlb_links, comment=None, submission=None):
+    if not mlb_links:
+        return False
+
+    for split_mlb_links in chunks(mlb_links, 20):
+        comment_string = ''
+        for video_block_text in split_mlb_links:
+            comment_string += "\n\n".join(video_block_text) + "\n\n"
+        try:
+            if comment is not None:
+                comment.reply(comment_text(comment_string))
+            else:
+                submission.add_comment(comment_text(comment_string))
+        except Exception, e:
+            import sys, traceback;
+            ex_type, ex, tb = sys.exc_info();
+            traceback.print_tb(tb)
+            print "Error: {}".format(e)
+            pass
+
+def check_comment(comment):
+    conn, cursor = db.connect_to_db()
+
+    try:
+        if db.check_hash_exists('comments', comment.id, cursor):
+            return False
+        if comment.__class__.__name__ == 'MoreComments':
+            return False
+
+        mlb_links = find_mlb_links(comment.body)
+        if reply(mlb_links, comment=comment):
+            cursor.execute("INSERT INTO comments (hash_id) VALUES ('{}');".format(comment.id))
+            conn.commit()
+            return True
+
+        return False
+    finally:
+        conn.close()
+
+def check_submission(submission):
+    conn, cursor = db.connect_to_db()
+
+    try:
+        if db.check_hash_exists('submissions', submission.id, cursor):
+            return False
+
+        if submission.is_self:
+            mlb_links = find_mlb_links(submission.selftext)
+        else:
+            mlb_links = find_mlb_links(submission.url)
+
+        if reply(mlb_links, submission=submission):
+            cursor.execute("INSERT INTO submissions (hash_id) VALUES ('{}');".format(submission.id))
+            conn.commit()
+            return True
+        return False
+    finally:
+        conn.close()
+
 def comment_text(comment):
     return '''{}
 
 [More Info](/r/MLBVideoConverterBot)'''.format(comment)
 
-def subreddit_submissions(subreddits):
-    for subreddit, limit in subreddits:
-        try:
-            print "  Checking {}".format(subreddit)
-            for submission in r.get_subreddit(subreddit).get_hot(limit=limit):
-                yield submission
-        except:
-            print "error encountered getting submissions for {}.".format(subreddit)
-            continue
-
 def domain_submissions(domains):
     for domain, limit in domains:
         try:
             print "  Checking {}".format(domain)
-            for submission in r.get_domain_listing(domain, limit=limit):
+            for submission in reddit.domain(domain, limit=26):
                 yield submission
         except:
             print "error encountered getting submissions for domain {}.".format(domain)
@@ -179,76 +231,31 @@ def chunks(seq, n):
     for i in xrange(0, len(seq), n):
         yield seq[i:i + n]
 
-def bot():
-    conn, cursor = db.connect_to_db()
-    subreddits = [(subreddit, primary_limit) for subreddit in primary_subreddits]
-    subreddits += [("+".join(secondary_subreddits[i:i+group_size]), group_limit) for i in range(0, len(secondary_subreddits), group_size)]
-    domains = [(domain, primary_limit) for domain in primary_domains]
+def main():
+    subreddit = reddit.subreddit('+'.join(subreddits))
+    comment_stream = subreddit.stream.comments(pause_after=0)
+    submission_stream = subreddit.stream.submissions(pause_after=0)
 
-    for submission in itertools.chain(domain_submissions(domains), subreddit_submissions(subreddits)):
-        if not db.check_hash_exists('submissions', submission.id, cursor):
-            if submission.is_self:
-                mlb_links = find_mlb_links(submission.selftext)
-            else:
-                mlb_links = find_mlb_links(submission.url)
+    for comment in comment_stream:
+        if not check_comment(comment):
+            continue
 
-            if mlb_links:
-                for split_mlb_links in chunks(mlb_links, 20):
-                    comment_string = ''
-                    for video_block_text in split_mlb_links:
-                        comment_string += "\n\n".join(video_block_text) + "\n\n"
-                    try:
-                        submission.add_comment(comment_text(comment_string))
-                    except Exception, e:
-                        import sys, traceback;
-                        ex_type, ex, tb = sys.exc_info();
-                        traceback.print_tb(tb)
-                        print "Error: {}".format(e)
-                        pass
-                cursor.execute("INSERT INTO submissions (hash_id) VALUES ('{}');".format(submission.id))
-                conn.commit()
+    for submission in submission_stream:
+        if not check_submission(submission):
+            continue
 
-        # submission.replace_more_comments(limit=None, threshold=0)
+    #  No domain stream exists yet; check submissions the old fashioned way
+    for submission in domain_submissions(domains):
+        check_submission(submission)
+
         try:
-            comments = praw.helpers.flatten_tree(submission.comments)
+            comments = submission.comments.list()
         except:
             print "error encountered getting comments for http://redd.it/{}".format(submission.id)
             continue
-        for comment in praw.helpers.flatten_tree(submission.comments):
-            if db.check_hash_exists('comments', comment.id, cursor):
-                continue
 
-            if comment.__class__.__name__ == 'MoreComments':
-                continue
+        for comment in comments:
+            check_comment(comment)
 
-            mlb_links = find_mlb_links(comment.body)
-            if mlb_links:
-                for split_mlb_links in chunks(mlb_links, 20):
-                    comment_string = ''
-                    for video_block_text in split_mlb_links:     
-                        comment_string += "\n\n".join(video_block_text) + "\n\n"
-                    try:
-                        comment.reply(comment_text(comment_string))
-                    except Exception, e:
-                        import sys, traceback;
-                        ex_type, ex, tb = sys.exc_info();
-                        traceback.print_tb(tb)
-                        print "Error: {}".format(e)
-                        pass
-                cursor.execute("INSERT INTO comments (hash_id) VALUES ('{}');".format(comment.id))
-                conn.commit()
-    conn.close()
-
-iteration = 0
-while True:
-    start_time = time.time() 
-    print "Iteration: {}".format(iteration)
-    iteration += 1
-    try:
-        bot()
-        print "Done with iteration.  Time to run: {}".format(time.time()-start_time)
-    except Exception, e:
-        import sys, traceback; ex_type, ex, tb = sys.exc_info(); traceback.print_tb(tb)
-        print "Error: {}".format(e)
-        pass
-    time.sleep(30)
+if __name__ == '__main__':
+    main()
