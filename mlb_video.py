@@ -48,7 +48,7 @@ subreddits = [
 domains = ['mlb.com', 'atmlb.com']
 
 # testing override
-# primary_subreddits = ['mlbvideoconverterbot']; secondary_subreddits = []; primary_domains = []
+subreddits = ['mlbvideoconverterbot']; domains = []
 
 def find_mlb_links(text):
     text = text.encode('utf-8')
