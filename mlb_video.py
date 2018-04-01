@@ -151,7 +151,7 @@ def get_media_for_content_id(match):
  
     return media
 
-def reply(mlb_links, comment=None, submission=None):
+def reply(mlb_links, comment_or_submission):
     if not mlb_links:
         return False
 
@@ -160,10 +160,7 @@ def reply(mlb_links, comment=None, submission=None):
         for video_block_text in split_mlb_links:
             comment_string += "\n\n".join(video_block_text) + "\n\n"
         try:
-            if comment is not None:
-                comment.reply(comment_text(comment_string))
-            else:
-                submission.add_comment(comment_text(comment_string))
+            comment_or_submission.reply(comment_text(comment_string))
         except Exception, e:
             import sys, traceback;
             ex_type, ex, tb = sys.exc_info();
