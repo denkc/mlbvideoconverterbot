@@ -54,6 +54,13 @@ domains = ['mlb.com', 'atmlb.com']
 # testing override
 # subreddits = ['mlbvideoconverterbot']; domains = []
 
+def skip_match(text):
+    for skip_pattern in MLB_SKIP_PATTERNS:
+        skip_match = re.search(skip_pattern, text)
+        if skip_match:
+            return True
+    return False
+
 def find_mlb_links(text):
     text = text.encode('utf-8')
 
@@ -79,10 +86,8 @@ def find_mlb_links(text):
 
     formatted_comments = []
     for match in re_matches:
-        for skip_pattern in MLB_SKIP_PATTERNS:
-            match = re.search(skip_pattern, match.string)
-            if match:
-                continue
+        if skip_match(match.string):
+            continue
         if match.group('content_id') in unique_content_id:
             continue
         unique_content_id.add(match.group('content_id'))
