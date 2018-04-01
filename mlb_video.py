@@ -252,6 +252,8 @@ def main():
             if isinstance(comment, Comment):
                 check_comment(comment)
 
+        #  Skip domain checks as they take too long
+        '''
         #  No domain stream exists yet; check submissions the old fashioned way
         for submission in domain_submissions(domains):
             check_submission(submission)
@@ -264,6 +266,7 @@ def main():
 
             for comment in comments:
                 check_comment(comment)
+        '''
 
 if __name__ == '__main__':
     while True:
