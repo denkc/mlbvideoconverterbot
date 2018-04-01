@@ -23,6 +23,10 @@ MLB_PATTERNS = [
     r'(?P<domain>mi?lb).com/.*/c-(?P<content_id>\d+)',
 ]
 
+MLB_SKIP_PATTERNS = [
+    r'mlb.com/news'
+]
+
 SHORTURL_PATTERNS = [
     r'(?:https?://)?(?P<url>atmlb.com\S+)'
 ]
@@ -75,6 +79,10 @@ def find_mlb_links(text):
 
     formatted_comments = []
     for match in re_matches:
+        for skip_pattern in MLB_SKIP_PATTERNS:
+            match = re.search(skip_pattern, match.string)
+            if match:
+                continue
         if match.group('content_id') in unique_content_id:
             continue
         unique_content_id.add(match.group('content_id'))
@@ -235,8 +243,8 @@ def main():
     #   stream settings so it doesn't load any historical info
     while True:
         subreddit = reddit.subreddit('+'.join(subreddits))
-        comment_stream = subreddit.stream.comments(pause_after=0)
-        submission_stream = subreddit.stream.submissions(pause_after=0)
+        comment_stream = subreddit.stream.comments(pause_after=5)
+        submission_stream = subreddit.stream.submissions(pause_after=5)
 
         for comment in comment_stream:
             if comment is None:
