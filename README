@@ -1,1 +1,3 @@
 Set up to run on heroku.  Requires environment variables to be set; see set_heroku_config.sh
+
+For local testing, override the settings in config.py as needed.

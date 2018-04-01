@@ -33,6 +33,7 @@ def skip_match(text):
             return True
     return False
 
+
 def find_mlb_links(text):
     text = text.encode('utf-8')
 
@@ -56,10 +57,14 @@ def find_mlb_links(text):
             print "    match {} found: {}".format(match.groupdict(), text)
             re_matches.append(match)
 
-    unique_content_id = set()
+    return format_comments(re_matches)
 
+
+def format_comments(regex_matches):
+    unique_content_id = set()
     formatted_comments = []
-    for match in re_matches:
+
+    for match in regex_matches:
         if match.group('content_id') in unique_content_id:
             continue
         unique_content_id.add(match.group('content_id'))
@@ -77,6 +82,7 @@ def find_mlb_links(text):
         formatted_comments.append(video_text_block)
 
     return formatted_comments
+
 
 def get_media_for_content_id(match):
     content_id = match.group('content_id')

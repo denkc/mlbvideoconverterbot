@@ -28,6 +28,7 @@ domains = ['mlb.com', 'atmlb.com']
 # testing override
 # subreddits = ['mlbvideoconverterbot']; domains = []
 
+
 def reply(mlb_links, comment_or_submission):
     if not mlb_links:
         return False
@@ -47,6 +48,7 @@ def reply(mlb_links, comment_or_submission):
 
     return True
 
+
 def check_comment(comment):
     conn, cursor = db.connect_to_db()
 
@@ -65,6 +67,7 @@ def check_comment(comment):
         return False
     finally:
         conn.close()
+
 
 def check_submission(submission):
     conn, cursor = db.connect_to_db()
@@ -86,26 +89,19 @@ def check_submission(submission):
     finally:
         conn.close()
 
+
 def comment_text(comment):
     return '''{}
 
 [More Info](/r/MLBVideoConverterBot)'''.format(comment)
 
-def domain_submissions(domains):
-    for domain in domains:
-        try:
-            print "  Checking {}".format(domain)
-            for submission in reddit.domain(domain).hot():
-                yield submission
-        except:
-            print "error encountered getting submissions for domain {}.".format(domain)
-            continue
 
 # http://stackoverflow.com/a/312464/190597 (Ned Batchelder)
 def chunks(seq, n):
     """ Yield successive n-sized chunks from seq."""
     for i in xrange(0, len(seq), n):
         yield seq[i:i + n]
+
 
 def main():
     # Even though main is already wrapped in a while True below, this maintains the
@@ -133,21 +129,6 @@ def main():
             if isinstance(comment, Comment):
                 check_comment(comment)
 
-        #  Skip domain checks as they take too long
-        '''
-        #  No domain stream exists yet; check submissions the old fashioned way
-        for submission in domain_submissions(domains):
-            check_submission(submission)
-
-            try:
-                comments = submission.comments.list()
-            except:
-                print "error encountered getting comments for http://redd.it/{}".format(submission.id)
-                continue
-
-            for comment in comments:
-                check_comment(comment)
-        '''
 
 if __name__ == '__main__':
     while True:

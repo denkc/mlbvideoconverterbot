@@ -1,5 +1,5 @@
 *.pyc
 env/
-config.py
+config.py.*
 *.pg
 
