@@ -1,4 +1,3 @@
-import itertools
 import re
 from xml.etree import ElementTree
 
