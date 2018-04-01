@@ -216,10 +216,10 @@ def comment_text(comment):
 [More Info](/r/MLBVideoConverterBot)'''.format(comment)
 
 def domain_submissions(domains):
-    for domain, limit in domains:
+    for domain in domains:
         try:
             print "  Checking {}".format(domain)
-            for submission in reddit.domain(domain, limit=26):
+            for submission in reddit.domain(domain).hot():
                 yield submission
         except:
             print "error encountered getting submissions for domain {}.".format(domain)
@@ -264,4 +264,9 @@ def main():
             check_comment(comment)
 
 if __name__ == '__main__':
-    main()
+    while True:
+        try:
+            main()
+        except Exception, e:
+            import sys, traceback; ex_type, ex, tb = sys.exc_info(); traceback.print_tb(tb)
+            print "Error: {}".format(e)
