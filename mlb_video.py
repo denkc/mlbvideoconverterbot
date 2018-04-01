@@ -178,7 +178,7 @@ def check_comment(comment):
             return False
 
         mlb_links = find_mlb_links(comment.body)
-        if reply(mlb_links, comment=comment):
+        if reply(mlb_links, comment):
             cursor.execute("INSERT INTO comments (hash_id) VALUES ('{}');".format(comment.id))
             conn.commit()
             return True
@@ -199,7 +199,7 @@ def check_submission(submission):
         else:
             mlb_links = find_mlb_links(submission.url)
 
-        if reply(mlb_links, submission=submission):
+        if reply(mlb_links, submission):
             cursor.execute("INSERT INTO submissions (hash_id) VALUES ('{}');".format(submission.id))
             conn.commit()
             return True
