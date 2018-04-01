@@ -48,7 +48,7 @@ subreddits = [
 domains = ['mlb.com', 'atmlb.com']
 
 # testing override
-subreddits = []; domains = []
+# subreddits = ['mlbvideoconverterbot']; domains = []
 
 def find_mlb_links(text):
     text = text.encode('utf-8')
@@ -168,6 +168,8 @@ def reply(mlb_links, comment_or_submission):
             print "Error: {}".format(e)
             pass
 
+    return True
+
 def check_comment(comment):
     conn, cursor = db.connect_to_db()
 
@@ -229,36 +231,39 @@ def chunks(seq, n):
         yield seq[i:i + n]
 
 def main():
-    subreddit = reddit.subreddit('+'.join(subreddits))
-    comment_stream = subreddit.stream.comments(pause_after=0)
-    submission_stream = subreddit.stream.submissions(pause_after=0)
+    # Even though main is already wrapped in a while True below, this maintains the
+    #   stream settings so it doesn't load any historical info
+    while True:
+        subreddit = reddit.subreddit('+'.join(subreddits))
+        comment_stream = subreddit.stream.comments(pause_after=0)
+        submission_stream = subreddit.stream.submissions(pause_after=0)
 
-    for comment in comment_stream:
-        if comment is None:
-            break
-        check_comment(comment)
-
-    for submission in submission_stream:
-        if submission is None:
-            break
-        check_submission(submission)
-
-    for comment in reddit.inbox.unread(mark_read=True, limit=None):
-        if isinstance(comment, Comment):
+        for comment in comment_stream:
+            if comment is None:
+                break
             check_comment(comment)
 
-    #  No domain stream exists yet; check submissions the old fashioned way
-    for submission in domain_submissions(domains):
-        check_submission(submission)
+        for submission in submission_stream:
+            if submission is None:
+                break
+            check_submission(submission)
 
-        try:
-            comments = submission.comments.list()
-        except:
-            print "error encountered getting comments for http://redd.it/{}".format(submission.id)
-            continue
+        for comment in reddit.inbox.unread(mark_read=True, limit=None):
+            if isinstance(comment, Comment):
+                check_comment(comment)
 
-        for comment in comments:
-            check_comment(comment)
+        #  No domain stream exists yet; check submissions the old fashioned way
+        for submission in domain_submissions(domains):
+            check_submission(submission)
+
+            try:
+                comments = submission.comments.list()
+            except:
+                print "error encountered getting comments for http://redd.it/{}".format(submission.id)
+                continue
+
+            for comment in comments:
+                check_comment(comment)
 
 if __name__ == '__main__':
     while True:
