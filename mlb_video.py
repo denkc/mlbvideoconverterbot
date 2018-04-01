@@ -237,9 +237,13 @@ def main():
     submission_stream = subreddit.stream.submissions(pause_after=0)
 
     for comment in comment_stream:
+        if comment is None:
+            break
         check_comment(comment)
 
     for submission in submission_stream:
+        if submission is None:
+            break
         check_submission(submission)
 
     for comment in reddit.inbox.unread(mark_read=True, limit=None):
