@@ -107,20 +107,18 @@ def main():
     # Even though main is already wrapped in a while True below, this maintains the
     #   stream settings so it doesn't load any historical info
     subreddit = reddit.subreddit('+'.join(subreddits))
-    comment_stream = subreddit.stream.comments(pause_after=5)
-    submission_stream = subreddit.stream.submissions(pause_after=5)
 
     iteration = 0
     while True:
         print "Iteration: {}".format(iteration)
         iteration += 1
 
-        for comment in comment_stream:
+        for comment in subreddit.stream.comments(pause_after=5):
             if comment is None:
                 break
             check_comment(comment)
 
-        for submission in submission_stream:
+        for submission in subreddit.stream.submissions(pause_after=5):
             if submission is None:
                 break
             check_submission(submission)
