@@ -52,8 +52,6 @@ def reply(mlb_links, comment_or_submission):
 
 
 def check_comment(comment, conn, cursor):
-    print "checking comment {}".format(comment.id)
-
     if db.check_hash_exists('comments', comment.id, cursor):
         return False
     if comment.__class__.__name__ == 'MoreComments':
@@ -69,8 +67,6 @@ def check_comment(comment, conn, cursor):
 
 
 def check_submission(submission, conn, cursor):
-    print "checking submission {}".format(submission.id)
-
     if db.check_hash_exists('submissions', submission.id, cursor):
         return False
 
