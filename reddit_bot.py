@@ -1,3 +1,5 @@
+import time
+
 import praw
 from praw.models import Comment
 
@@ -49,45 +51,40 @@ def reply(mlb_links, comment_or_submission):
     return True
 
 
-def check_comment(comment):
-    conn, cursor = db.connect_to_db()
+def check_comment(comment, conn, cursor):
+    print "checking comment {}".format(comment.id)
 
-    try:
-        if db.check_hash_exists('comments', comment.id, cursor):
-            return False
-        if comment.__class__.__name__ == 'MoreComments':
-            return False
-
-        mlb_links = find_mlb_links(comment.body)
-        if reply(mlb_links, comment):
-            cursor.execute("INSERT INTO comments (hash_id) VALUES ('{}');".format(comment.id))
-            conn.commit()
-            return True
-
+    if db.check_hash_exists('comments', comment.id, cursor):
         return False
-    finally:
-        conn.close()
-
-
-def check_submission(submission):
-    conn, cursor = db.connect_to_db()
-
-    try:
-        if db.check_hash_exists('submissions', submission.id, cursor):
-            return False
-
-        if submission.is_self:
-            mlb_links = find_mlb_links(submission.selftext)
-        else:
-            mlb_links = find_mlb_links(submission.url)
-
-        if reply(mlb_links, submission):
-            cursor.execute("INSERT INTO submissions (hash_id) VALUES ('{}');".format(submission.id))
-            conn.commit()
-            return True
+    if comment.__class__.__name__ == 'MoreComments':
         return False
-    finally:
-        conn.close()
+
+    mlb_links = find_mlb_links(comment.body)
+    if reply(mlb_links, comment):
+        cursor.execute("INSERT INTO comments (hash_id) VALUES ('{}');".format(comment.id))
+        conn.commit()
+        return True
+
+    return False
+
+
+def check_submission(submission, conn, cursor):
+    print "checking submission {}".format(submission.id)
+
+    if db.check_hash_exists('submissions', submission.id, cursor):
+        return False
+
+    if submission.is_self:
+        mlb_links = find_mlb_links(submission.selftext)
+    else:
+        mlb_links = find_mlb_links(submission.url)
+
+    if reply(mlb_links, submission):
+        cursor.execute("INSERT INTO submissions (hash_id) VALUES ('{}');".format(submission.id))
+        conn.commit()
+        return True
+
+    return False
 
 
 def comment_text(comment):
@@ -109,23 +106,36 @@ def main():
     subreddit = reddit.subreddit('+'.join(subreddits))
 
     iteration = 0
+    latest_time = None
     while True:
         print "Iteration: {}".format(iteration)
         iteration += 1
 
-        for comment in subreddit.stream.comments(pause_after=5):
+        conn, cursor = db.connect_to_db()
+
+        # handle race conditions
+        tmp_latest_time = time.time()
+
+        for comment in subreddit.stream.comments(pause_after=0):
             if comment is None:
                 break
-            check_comment(comment)
+            if latest_time and latest_time > comment.created_utc:
+                continue
+            check_comment(comment, conn, cursor)
 
-        for submission in subreddit.stream.submissions(pause_after=5):
+        for submission in subreddit.stream.submissions(pause_after=0):
             if submission is None:
                 break
-            check_submission(submission)
+            if latest_time and latest_time > submission.created_utc:
+                continue
+            check_submission(submission, conn, cursor)
 
         for comment in reddit.inbox.unread(mark_read=True, limit=None):
             if isinstance(comment, Comment):
-                check_comment(comment)
+                check_comment(comment, conn, cursor)
+
+        conn.close()
+        latest_time = tmp_latest_time
 
 
 if __name__ == '__main__':
