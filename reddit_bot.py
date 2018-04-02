@@ -106,14 +106,14 @@ def chunks(seq, n):
 def main():
     # Even though main is already wrapped in a while True below, this maintains the
     #   stream settings so it doesn't load any historical info
+    subreddit = reddit.subreddit('+'.join(subreddits))
+    comment_stream = subreddit.stream.comments(pause_after=5)
+    submission_stream = subreddit.stream.submissions(pause_after=5)
+
     iteration = 0
     while True:
         print "Iteration: {}".format(iteration)
         iteration += 1
-
-        subreddit = reddit.subreddit('+'.join(subreddits))
-        comment_stream = subreddit.stream.comments(pause_after=5)
-        submission_stream = subreddit.stream.submissions(pause_after=5)
 
         for comment in comment_stream:
             if comment is None:
