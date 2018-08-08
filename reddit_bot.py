@@ -118,6 +118,7 @@ def main():
             if comment is None:
                 break
             if latest_time and latest_time > comment.created_utc:
+                print "latest_time: {}; comment.created_utc: {}".format(latest_time, comment.created_utc)
                 continue
             check_comment(comment, conn, cursor)
 
@@ -125,12 +126,13 @@ def main():
             if submission is None:
                 break
             if latest_time and latest_time > submission.created_utc:
+                print "latest_time: {}; submission.created_utc: {}".format(latest_time, submission.created_utc)
                 continue
             check_submission(submission, conn, cursor)
 
-        for comment in reddit.inbox.unread(mark_read=True, limit=None):
-            if isinstance(comment, Comment):
-                check_comment(comment, conn, cursor)
+        #for comment in reddit.inbox.unread(mark_read=True, limit=None):
+        #    if isinstance(comment, Comment):
+        #        check_comment(comment, conn, cursor)
 
         conn.close()
         latest_time = tmp_latest_time
