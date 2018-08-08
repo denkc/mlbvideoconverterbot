@@ -104,30 +104,20 @@ def main():
     submission_stream = subreddit.stream.submissions(pause_after=0)
 
     iteration = 0
-    latest_time = None
     while True:
         print "Iteration: {}".format(iteration)
         iteration += 1
 
         conn, cursor = db.connect_to_db()
 
-        # handle race conditions
-        tmp_latest_time = time.time()
-
         for comment in comment_stream:
             if comment is None:
                 break
-            if latest_time and latest_time > comment.created_utc:
-                print "latest_time: {}; comment.created_utc: {}".format(latest_time, comment.created_utc)
-                continue
             check_comment(comment, conn, cursor)
 
         for submission in submission_stream:
             if submission is None:
                 break
-            if latest_time and latest_time > submission.created_utc:
-                print "latest_time: {}; submission.created_utc: {}".format(latest_time, submission.created_utc)
-                continue
             check_submission(submission, conn, cursor)
 
         #for comment in reddit.inbox.unread(mark_read=True, limit=None):
@@ -135,7 +125,6 @@ def main():
         #        check_comment(comment, conn, cursor)
 
         conn.close()
-        latest_time = tmp_latest_time
 
 
 if __name__ == '__main__':
