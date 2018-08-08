@@ -101,7 +101,7 @@ def main():
     #   stream settings so it doesn't load any historical info
     subreddit = reddit.subreddit('+'.join(subreddits))
     comment_stream = subreddit.stream.comments(pause_after=0)
-    subreddit.stream.submissions(pause_after=0)
+    submission_stream = subreddit.stream.submissions(pause_after=0)
 
     iteration = 0
     latest_time = None
