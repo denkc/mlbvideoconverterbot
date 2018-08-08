@@ -100,6 +100,8 @@ def main():
     # Even though main is already wrapped in a while True below, this maintains the
     #   stream settings so it doesn't load any historical info
     subreddit = reddit.subreddit('+'.join(subreddits))
+    comment_stream = subreddit.stream.comments(pause_after=0)
+    subreddit.stream.submissions(pause_after=0)
 
     iteration = 0
     latest_time = None
@@ -112,14 +114,14 @@ def main():
         # handle race conditions
         tmp_latest_time = time.time()
 
-        for comment in subreddit.stream.comments(pause_after=0):
+        for comment in comment_stream:
             if comment is None:
                 break
             if latest_time and latest_time > comment.created_utc:
                 continue
             check_comment(comment, conn, cursor)
 
-        for submission in subreddit.stream.submissions(pause_after=0):
+        for submission in submission_stream:
             if submission is None:
                 break
             if latest_time and latest_time > submission.created_utc:
