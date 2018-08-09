@@ -105,7 +105,8 @@ def main():
 
     iteration = 0
     while True:
-        print "Iteration: {}".format(iteration)
+        if (iteration % 500) == 0:
+            print "Iteration: {}".format(iteration)
         iteration += 1
 
         conn, cursor = db.connect_to_db()

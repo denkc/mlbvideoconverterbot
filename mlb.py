@@ -96,7 +96,7 @@ def get_media_for_content_id(match):
     try:
         tree = ElementTree.fromstring(requests.get(url).content)
     except Exception, e:
-        print "    error parsing/receiving XML from url {}".format(url)
+        print "    error parsing/receiving XML from url {}: {}".format(url, e)
         return {}
 
     keyword = tree.find('keywords').find('keyword[@type="subject"]')
