@@ -119,13 +119,14 @@ def get_media_for_content_id(match):
             continue
         mp4_size_match = re.search('_(?P<mp4_size>\d+)K\.mp4', media_tag.text)
         if mp4_size_match is not None:
+            vid_url = media_tag.text.replace('http:', 'https:')
             mp4_size = int(mp4_size_match.group('mp4_size'))
             if mp4_size > largest_mp4_size:
                 largest_mp4_size = mp4_size
-                largest_mp4_url = media_tag.text
+                largest_mp4_url = vid_url
             if small_mp4_threshold > mp4_size > small_mp4_size:
                 small_mp4_size = mp4_size
-                small_mp4_url = media_tag.text
+                small_mp4_url = vid_url
 
     # Need to match at least one else return nothing
     if largest_mp4_url is None:
