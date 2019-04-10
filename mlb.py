@@ -2,12 +2,17 @@ import re
 from xml.etree import ElementTree
 
 import requests
+from bs4 import BeautifulSoup
 
-MLB_PATTERNS = [
+OLD_MLB_PATTERNS = [
     r'(?P<domain>mi?lb).com/(?:\w{2,3}/)?video/(?:topic/\d+/)?v(?P<content_id>\d+)',
     r'(?P<domain>mi?lb).com/.*content_id=(?P<content_id>\d+)',
     r'(?P<domain>mi?lb).com/.*/v(?P<content_id>\d+)',
     r'(?P<domain>mi?lb).com/.*/c-(?P<content_id>\d+)',
+]
+
+MLB_PATTERNS = [
+    r'\S*mi?lb.com/video/\S*'
 ]
 
 MLB_SKIP_PATTERNS = [
@@ -47,20 +52,70 @@ def find_mlb_links(text):
 
     text += ' {}'.format(shorturl_text)
 
-    re_matches = []
+    old_re_matches = []
 
-    for mlb_pattern in MLB_PATTERNS:
+    for mlb_pattern in OLD_MLB_PATTERNS:
         matches = re.finditer(mlb_pattern, text)
         for match in matches:
             if skip_match(match.string):
                 continue
             print "    match {} found: {}".format(match.groupdict(), text)
-            re_matches.append(match)
+            old_re_matches.append(match)
 
-    return format_comments(re_matches)
+    old_matches = format_old_comments(old_re_matches)
+
+    re_matches = []
+
+    for mlb_pattern in MLB_PATTERNS:
+        matches = re.finditer(mlb_pattern, text)
+        for match in matches:
+            # need to not duplicate old links
+            # best guess -- look for content_id in URL
+            for old_re_match in old_re_matches:
+                if old_re_match.group('content_id') in match.group():
+                    break
+            else:
+                print "    match {} found: {}".format(match.group(), text)
+                re_matches.append(match)
+
+    return old_matches + format_comments(re_matches)
 
 
 def format_comments(regex_matches):
+    formatted_comments = []
+
+    for match in regex_matches:
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_1) '
+            'AppleWebKit/537.36 (KHTML, like Gecko) Chrome/39.0.2171.95 Safari/537.36'
+        }
+        resp = requests.get(match.group(), headers=headers)
+        page_content = BeautifulSoup(resp.content, 'html.parser')
+
+        video_div = page_content.find(itemprop="video")
+        blurb = video_div.find(itemprop="name").get('content')
+        link = video_div.find(itemprop="contentURL").get('content')
+
+        formatted_comments.append(format_link({
+            'title': blurb,
+            'media': [(link, "Direct Link")]
+        }))
+
+    return formatted_comments
+
+
+def format_link(media_links):
+    title = media_links['title']
+    video_text_block = []
+    video_text_block.append("Video: {}".format(title))
+    for media_link, link_text in media_links['media']:
+        size_mb = round(float(requests.head(media_link).headers['content-length']) / (1024 ** 2), 2)
+        video_text_block.append("[{}]({}) ({} MB)".format(link_text, media_link, size_mb))
+    video_text_block.append("___________")
+    return video_text_block
+
+
+def format_old_comments(regex_matches):
     unique_content_id = set()
     formatted_comments = []
 
@@ -72,14 +127,7 @@ def format_comments(regex_matches):
         if not media_links:
             print "    no media link found for {}".format(match.group('content_id'))
             continue
-        title = media_links['title']
-        video_text_block = []
-        video_text_block.append("Video: {}".format(title))
-        for media_link, link_text in media_links['media']:
-            size_mb = round(float(requests.head(media_link).headers['content-length'])/(1024**2), 2)
-            video_text_block.append("[{}]({}) ({} MB)".format(link_text, media_link, size_mb))
-        video_text_block.append("___________")
-        formatted_comments.append(video_text_block)
+        formatted_comments.append(format_link(media_links))
 
     return formatted_comments
 
