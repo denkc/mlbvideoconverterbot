@@ -1,3 +1,5 @@
+from __future__ import absolute_import
+from __future__ import print_function
 import time
 
 import praw
@@ -6,6 +8,7 @@ from praw.models import Comment
 from mlb import find_mlb_links
 import config
 import db
+from six.moves import range
 
 reddit = praw.Reddit(
     user_agent=config.REDDIT_USERAGENT,
@@ -41,11 +44,11 @@ def reply(mlb_links, comment_or_submission):
             comment_string += "\n\n".join(video_block_text) + "\n\n"
         try:
             comment_or_submission.reply(comment_text(comment_string))
-        except Exception, e:
+        except Exception as e:
             import sys, traceback;
             ex_type, ex, tb = sys.exc_info();
             traceback.print_tb(tb)
-            print "Error: {}".format(e)
+            print("Error: {}".format(e))
             pass
 
     return True
@@ -92,7 +95,7 @@ def comment_text(comment):
 # http://stackoverflow.com/a/312464/190597 (Ned Batchelder)
 def chunks(seq, n):
     """ Yield successive n-sized chunks from seq."""
-    for i in xrange(0, len(seq), n):
+    for i in range(0, len(seq), n):
         yield seq[i:i + n]
 
 
@@ -100,44 +103,38 @@ def main():
     # Even though main is already wrapped in a while True below, this maintains the
     #   stream settings so it doesn't load any historical info
     subreddit = reddit.subreddit('+'.join(subreddits))
+    comment_stream = subreddit.stream.comments(pause_after=0)
+    submission_stream = subreddit.stream.submissions(pause_after=0)
 
     iteration = 0
-    latest_time = None
     while True:
-        print "Iteration: {}".format(iteration)
+        if (iteration % 500) == 0:
+            print("Iteration: {}".format(iteration))
         iteration += 1
 
         conn, cursor = db.connect_to_db()
 
-        # handle race conditions
-        tmp_latest_time = time.time()
-
-        for comment in subreddit.stream.comments(pause_after=0):
+        for comment in comment_stream:
             if comment is None:
                 break
-            if latest_time and latest_time > comment.created_utc:
-                continue
             check_comment(comment, conn, cursor)
 
-        for submission in subreddit.stream.submissions(pause_after=0):
+        for submission in submission_stream:
             if submission is None:
                 break
-            if latest_time and latest_time > submission.created_utc:
-                continue
             check_submission(submission, conn, cursor)
 
-        for comment in reddit.inbox.unread(mark_read=True, limit=None):
-            if isinstance(comment, Comment):
-                check_comment(comment, conn, cursor)
+        #for comment in reddit.inbox.unread(mark_read=True, limit=None):
+        #    if isinstance(comment, Comment):
+        #        check_comment(comment, conn, cursor)
 
         conn.close()
-        latest_time = tmp_latest_time
 
 
 if __name__ == '__main__':
     while True:
         try:
             main()
-        except Exception, e:
+        except Exception as e:
             import sys, traceback; ex_type, ex, tb = sys.exc_info(); traceback.print_tb(tb)
-            print "Error: {}".format(e)
+            print("Error: {}".format(e))
