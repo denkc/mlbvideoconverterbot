@@ -1,3 +1,6 @@
+from __future__ import absolute_import
+from __future__ import print_function
+import json
 import re
 from xml.etree import ElementTree
 
@@ -5,22 +8,22 @@ import requests
 from bs4 import BeautifulSoup
 
 OLD_MLB_PATTERNS = [
-    r'(?P<domain>mi?lb).com/(?:\w{2,3}/)?video/(?:topic/\d+/)?v(?P<content_id>\d+)',
-    r'(?P<domain>mi?lb).com/.*content_id=(?P<content_id>\d+)',
-    r'(?P<domain>mi?lb).com/.*/v(?P<content_id>\d+)',
-    r'(?P<domain>mi?lb).com/.*/c-(?P<content_id>\d+)',
+    '(?P<domain>mi?lb).com/(?:\w{2,3}/)?video/(?:topic/\d+/)?v(?P<content_id>\d+)',
+    '(?P<domain>mi?lb).com/.*content_id=(?P<content_id>\d+)',
+    '(?P<domain>mi?lb).com/.*/v(?P<content_id>\d+)',
+    '(?P<domain>mi?lb).com/.*/c-(?P<content_id>\d+)',
 ]
 
 MLB_PATTERNS = [
-    r'\S*mi?lb.com/video/\S*'
+    '\S*mi?lb.com/video/\S*'
 ]
 
 MLB_SKIP_PATTERNS = [
-    r'mlb.com/news'
+    'mlb.com/news'
 ]
 
 SHORTURL_PATTERNS = [
-    r'(?:https?://)?(?P<url>atmlb.com\S+)'
+    '(?:https?://)?(?P<url>atmlb.com\S+)'
 ]
 
 # Used to find true URL instead of inferring date
@@ -40,8 +43,6 @@ def skip_match(text):
 
 
 def find_mlb_links(text):
-    text = text.encode('utf-8')
-
     shorturl_text = ''
     for shorturl_pattern in SHORTURL_PATTERNS:
         matches = re.finditer(shorturl_pattern, text)
@@ -59,7 +60,7 @@ def find_mlb_links(text):
         for match in matches:
             if skip_match(match.string):
                 continue
-            print "    match {} found: {}".format(match.groupdict(), text)
+            print("    match {} found: {}".format(match.groupdict(), text))
             old_re_matches.append(match)
 
     old_matches = format_old_comments(old_re_matches)
@@ -75,7 +76,7 @@ def find_mlb_links(text):
                 if old_re_match.group('content_id') in match.group():
                     break
             else:
-                print "    match {} found: {}".format(match.group(), text)
+                print("    match {} found: {}".format(match.group(), text))
                 re_matches.append(match)
 
     return old_matches + format_comments(re_matches)
@@ -89,19 +90,37 @@ def format_comments(regex_matches):
             'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_1) '
             'AppleWebKit/537.36 (KHTML, like Gecko) Chrome/39.0.2171.95 Safari/537.36'
         }
-        resp = requests.get(match.group(), headers=headers)
+        resp = requests.get(parse_reddit_formatted_link(match.group()), headers=headers)
         page_content = BeautifulSoup(resp.content, 'html.parser')
 
-        video_div = page_content.find(itemprop="video")
-        blurb = video_div.find(itemprop="name").get('content')
-        link = video_div.find(itemprop="contentURL").get('content')
+        script_contents = page_content.find("script", type="application/ld+json")
+        video_info = json.loads(script_contents.encode_contents())
 
-        formatted_comments.append(format_link({
-            'title': blurb,
-            'media': [(link, "Direct Link")]
-        }))
+        blurb = video_info['name']
+
+        # MLB now providing streamable links, which is nice.
+        media = []
+        if video_info['embedUrl']:
+            media.append((video_info['embedUrl'], "Streamable Link"))
+        if video_info['contentUrl']:
+            media.append((video_info['contentUrl'], "Direct Link"))
+
+        if media:
+            formatted_comments.append(format_link({
+                'title': blurb,
+                'media': media
+            }))
 
     return formatted_comments
+
+
+# Reddit links can either be linked directly
+# - https://www.mlb.com/video/edwin-rios-called-out-on-strikes
+# Or they can be formatted
+# - [https://www.mlb.com/video/encarnacion-gets-yanks-on-board](https://www.mlb.com/video/encarnacion-gets-yanks-on-board)
+# This method extracts the link from the second format, or returns if unformatted
+def parse_reddit_formatted_link(link):
+    return link.split('](').pop().rstrip(')')
 
 
 def format_link(media_links):
@@ -109,8 +128,16 @@ def format_link(media_links):
     video_text_block = []
     video_text_block.append("Video: {}".format(title))
     for media_link, link_text in media_links['media']:
-        size_mb = round(float(requests.head(media_link).headers['content-length']) / (1024 ** 2), 2)
-        video_text_block.append("[{}]({}) ({} MB)".format(link_text, media_link, size_mb))
+        # Hack to skip getting content size if it's on Streamable
+        if link_text == "Streamable Link":
+            video_text_block.append("[{}]({})".format(link_text, media_link))
+            continue
+
+        headers = requests.head(media_link)
+        # Can be a redirect if it's a fastball-clips URL
+        if headers.status_code == 200:
+            size_mb = round(float(headers.headers['content-length']) / (1024 ** 2), 2)
+            video_text_block.append("[{}]({}) ({} MB)".format(link_text, media_link, size_mb))
     video_text_block.append("___________")
     return video_text_block
 
@@ -125,7 +152,7 @@ def format_old_comments(regex_matches):
         unique_content_id.add(match.group('content_id'))
         media_links = get_media_for_content_id(match)
         if not media_links:
-            print "    no media link found for {}".format(match.group('content_id'))
+            print("    no media link found for {}".format(match.group('content_id')))
             continue
         formatted_comments.append(format_link(media_links))
 
@@ -143,8 +170,8 @@ def get_media_for_content_id(match):
     })
     try:
         tree = ElementTree.fromstring(requests.get(url).content)
-    except Exception, e:
-        print "    error parsing/receiving XML from url {}: {}".format(url, e)
+    except Exception as e:
+        print("    error parsing/receiving XML from url {}: {}".format(url, e))
         return {}
 
     keyword = tree.find('keywords').find('keyword[@type="subject"]')

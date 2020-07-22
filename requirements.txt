@@ -1,4 +1,4 @@
-praw==6.0.0
+praw==7.0.0
 psycopg2
 requests
-bs4
+beautifulsoup4
