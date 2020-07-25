@@ -15,7 +15,7 @@ OLD_MLB_PATTERNS = [
 ]
 
 MLB_PATTERNS = [
-    '\S*mi?lb.com/video/\S*'
+    '\S*mi?lb.com/video/(?P<content_id>[\w\-]*)'
 ]
 
 MLB_SKIP_PATTERNS = [
@@ -26,8 +26,9 @@ SHORTURL_PATTERNS = [
     '(?:https?://)?(?P<url>atmlb.com\S+)'
 ]
 
+MLB_VIDEO_JSON_FORMAT = 'https://www.mlb.com/data-service/en/videos/{content_id}'
 # Used to find true URL instead of inferring date
-MLB_VIDEO_XML_FORMAT = 'http://www.{domain}.com/gen/multimedia/detail/{first}/{second}/{third}/{content_id}.xml'
+MLB_OLD_VIDEO_XML_FORMAT = 'http://www.{domain}.com/gen/multimedia/detail/{first}/{second}/{third}/{content_id}.xml'
 
 MLB_XML_IGNORED_SUBJECTS = [
     'MLBCOM_CONDENSED_GAME',
@@ -60,10 +61,10 @@ def find_mlb_links(text):
         for match in matches:
             if skip_match(match.string):
                 continue
-            print("    match {} found: {}".format(match.groupdict(), text))
+            print("    old match {} found: {}".format(match.groupdict(), text))
             old_re_matches.append(match)
 
-    old_matches = format_old_comments(old_re_matches)
+    old_matches, old_matched_content_ids = format_old_comments(old_re_matches)
 
     re_matches = []
 
@@ -71,10 +72,8 @@ def find_mlb_links(text):
         matches = re.finditer(mlb_pattern, text)
         for match in matches:
             # need to not duplicate old links
-            # best guess -- look for content_id in URL
-            for old_re_match in old_re_matches:
-                if old_re_match.group('content_id') in match.group():
-                    break
+            if match.group() in old_matched_content_ids:
+                break
             else:
                 print("    match {} found: {}".format(match.group(), text))
                 re_matches.append(match)
@@ -83,20 +82,54 @@ def find_mlb_links(text):
 
 
 def format_comments(regex_matches):
+    unique_content_id = set()
     formatted_comments = []
 
     for match in regex_matches:
+        if match.group('content_id') in unique_content_id:
+            continue
+        unique_content_id.add(match.group('content_id'))
+        media_links = get_media_for_content_id(match)
+        if not media_links:
+            print("    no media link found for {}".format(match.group('content_id')))
+            continue
+        formatted_comments.append(format_link(media_links))
+
+    return formatted_comments
+
+
+def get_media_for_content_id(match):
+
+    def get_media_from_json(match_):
+        content_id = match_.group('content_id')
+        url = MLB_VIDEO_JSON_FORMAT.format(**{
+            "content_id": content_id
+        })
+        video_data = json.loads(requests.get(url).content)
+        if 'playbacks' not in video_data:
+            return {}
+
+        media = []
+
+        for playback in video_data['playbacks']:
+            if playback['name'] not in ('mp4Avc', 'highBit'):
+                continue
+            media.append((playback['url'], 'Direct Link'))
+
+        return {'title': video_data['blurb'], 'media': media}
+
+    def get_media_from_html(match_):
         headers = {
             'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_1) '
             'AppleWebKit/537.36 (KHTML, like Gecko) Chrome/39.0.2171.95 Safari/537.36'
         }
-        resp = requests.get(parse_reddit_formatted_link(match.group()), headers=headers)
+        resp = requests.get(parse_reddit_formatted_link(match_.group()), headers=headers)
         page_content = BeautifulSoup(resp.content, 'html.parser')
 
         script_contents = page_content.find("script", type="application/ld+json")
         video_info = json.loads(script_contents.encode_contents())
 
-        blurb = video_info['name']
+        title = video_info['name']
 
         # MLB now providing streamable links, which is nice.
         media = []
@@ -105,14 +138,21 @@ def format_comments(regex_matches):
         if video_info['contentUrl']:
             media.append((video_info['contentUrl'], "Direct Link"))
 
-        if media:
-            formatted_comments.append(format_link({
-                'title': blurb,
-                'media': media
-            }))
+        return {'title': title, 'media': media}
 
-    return formatted_comments
+    json_media = get_media_from_json(match)
+    html_media = get_media_from_html(match)
 
+    unique_links = set()
+
+    # dedupe across json/html
+    media = []
+    for media_link, link_text in json_media['media'] + html_media['media']:
+        if media_link in unique_links:
+            continue
+        media.append((media_link, link_text))
+
+    return {'title': html_media['title'], 'media': media}
 
 # Reddit links can either be linked directly
 # - https://www.mlb.com/video/edwin-rios-called-out-on-strikes
@@ -123,6 +163,9 @@ def parse_reddit_formatted_link(link):
     return link.split('](').pop().rstrip(')')
 
 
+# Expects media_links with keys:
+# - title: string
+# - media: list of tuples of (link, text for link)
 def format_link(media_links):
     title = media_links['title']
     video_text_block = []
@@ -145,23 +188,25 @@ def format_link(media_links):
 def format_old_comments(regex_matches):
     unique_content_id = set()
     formatted_comments = []
+    matched_content_ids = set()
 
     for match in regex_matches:
         if match.group('content_id') in unique_content_id:
             continue
         unique_content_id.add(match.group('content_id'))
-        media_links = get_media_for_content_id(match)
+        media_links = get_media_for_old_content_id(match)
         if not media_links:
             print("    no media link found for {}".format(match.group('content_id')))
             continue
         formatted_comments.append(format_link(media_links))
+        matched_content_ids.add(match.group('content_id'))
 
-    return formatted_comments
+    return formatted_comments, matched_content_ids
 
 
-def get_media_for_content_id(match):
+def get_media_for_old_content_id(match):
     content_id = match.group('content_id')
-    url = MLB_VIDEO_XML_FORMAT.format(**{
+    url = MLB_OLD_VIDEO_XML_FORMAT.format(**{
         "domain": match.group('domain'),
         "first": content_id[-3],
         "second": content_id[-2],
