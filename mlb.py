@@ -112,9 +112,10 @@ def get_media_for_content_id(match):
         media = []
 
         for playback in video_data['playbacks']:
-            if playback['name'] not in ('mp4Avc', 'highBit'):
-                continue
-            media.append((playback['url'], 'Direct Link'))
+            if playback['name'] == 'mp4Avc':
+                media.append((playback['url'], 'Standard'))
+            elif playback['name'] == 'highBit':
+                media.append((playback['url'], 'High Definition'))
 
         return {'title': video_data['blurb'], 'media': media}
 
