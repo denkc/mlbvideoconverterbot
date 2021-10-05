@@ -135,7 +135,7 @@ def get_media_for_content_id(match):
         media = []
         if video_info['embedUrl']:
             media.append((video_info['embedUrl'], "Streamable Link"))
-        if video_info['contentUrl']:
+        if video_info['contentUrl'] and not video_info['contentUrl'].endswith('m3u8'):
             media.append((video_info['contentUrl'], "Direct Link"))
 
         return {'title': title, 'media': media}
