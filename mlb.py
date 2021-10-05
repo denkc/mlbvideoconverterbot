@@ -113,7 +113,7 @@ def get_media_for_content_id(match):
 
         for playback in video_data['playbacks']:
             if playback['name'] == 'mp4Avc':
-                media.append((playback['url'], 'Standard'))
+                media.append((playback['url'], 'Standard Definition'))
             elif playback['name'] == 'highBit':
                 media.append((playback['url'], 'High Definition'))
 
@@ -137,7 +137,7 @@ def get_media_for_content_id(match):
         if video_info['embedUrl']:
             media.append((video_info['embedUrl'], "Streamable Link"))
         if video_info['contentUrl'] and not video_info['contentUrl'].endswith('m3u8'):
-            media.append((video_info['contentUrl'], "Direct Link"))
+            media.append((video_info['contentUrl'], "MP4 Link"))
 
         return {'title': title, 'media': media}
 
