@@ -1,7 +1,9 @@
 from __future__ import absolute_import
 from __future__ import print_function
+import ast
 import json
 import re
+import sys
 from xml.etree import ElementTree
 
 import requests
@@ -112,14 +114,49 @@ def get_media_for_content_id(match):
         media = []
 
         for playback in video_data['playbacks']:
-            if playback['name'] == 'mp4Avc':
-                media.append((playback['url'], 'Standard Definition'))
-            elif playback['name'] == 'highBit':
-                media.append((playback['url'], 'High Definition'))
+            if not playback['url'].endswith('mp4'):
+                continue
+            media.append((playback['url'], playback['name']))
 
         return {'title': video_data['blurb'], 'media': media}
 
     def get_media_from_html(match_):
+        def search_ld_json_block(ld_json_block):
+            video_info = json.loads(ld_json_block.encode_contents())
+
+            title = video_info['name']
+
+            # MLB now providing streamable links, which is nice.
+            media = []
+            if video_info['embedUrl']:
+                media.append((video_info['embedUrl'], "Streamable Link"))
+            if video_info['contentUrl'] and not video_info['contentUrl'].endswith('m3u8'):
+                media.append((video_info['contentUrl'], "MP4 Link"))
+
+            return {'title': title, 'media': media}
+
+        def search_main_block(main_script_contents):
+            media = []
+            title = ""
+            for line in main_script_contents.string.splitlines():
+                init_state = line.split("__VIDEO_INIT_STATE__ = ")
+                if len(init_state) < 2:
+                    continue
+                init_state_dict = json.loads(ast.literal_eval(init_state[1].rstrip(";")))
+                for key in init_state_dict.keys():
+                    if not key.startswith("MediaPlayback:"):
+                        continue
+                    media_playback = init_state_dict[key]
+                    if 'blurb' in media_playback:
+                        title = media_playback['blurb']
+                    for feed in media_playback.get('feeds', []):
+                        for playback in feed.get('playbacks', []):
+                            if 'url' not in playback or 'name' not in playback or not playback['url'].endswith('mp4'):
+                                continue
+                            media.append((playback['url'], playback['name']))
+
+            return {'title': title, 'media': media}
+
         headers = {
             'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_1) '
             'AppleWebKit/537.36 (KHTML, like Gecko) Chrome/39.0.2171.95 Safari/537.36'
@@ -127,19 +164,14 @@ def get_media_for_content_id(match):
         resp = requests.get(parse_reddit_formatted_link(match_.group()), headers=headers)
         page_content = BeautifulSoup(resp.content, 'html.parser')
 
-        script_contents = page_content.find("script", type="application/ld+json")
-        video_info = json.loads(script_contents.encode_contents())
+        ld_json_script_contents = page_content.find("script", type="application/ld+json")
+        ld_json_results = search_ld_json_block(ld_json_script_contents)
 
-        title = video_info['name']
+        main_script_contents = page_content.find("main").find("script")
+        main_script_results = search_main_block(main_script_contents)
 
-        # MLB now providing streamable links, which is nice.
-        media = []
-        if video_info['embedUrl']:
-            media.append((video_info['embedUrl'], "Streamable Link"))
-        if video_info['contentUrl'] and not video_info['contentUrl'].endswith('m3u8'):
-            media.append((video_info['contentUrl'], "MP4 Link"))
-
-        return {'title': title, 'media': media}
+        return {'title': ld_json_results['title'],
+                'media': ld_json_results['media'] + main_script_results['media']}
 
     json_media = get_media_from_json(match)
     html_media = get_media_from_html(match)
@@ -151,6 +183,7 @@ def get_media_for_content_id(match):
     for media_link, link_text in json_media['media'] + html_media['media']:
         if media_link in unique_links:
             continue
+        unique_links.add(media_link)
         media.append((media_link, link_text))
 
     return {'title': html_media['title'], 'media': media}
@@ -169,21 +202,40 @@ def parse_reddit_formatted_link(link):
 # - media: list of tuples of (link, text for link)
 def format_link(media_links):
     title = media_links['title']
-    video_text_block = []
-    video_text_block.append("Video: {}".format(title))
+
+    streamable_links = []
+    mp4_links = []
+    mp4_sorter = []
+
     for media_link, link_text in media_links['media']:
         # Hack to skip getting content size if it's on Streamable
         if link_text == "Streamable Link":
-            video_text_block.append("[{}]({})".format(link_text, media_link))
+            streamable_links.append("[{}]({})".format(link_text, media_link))
             continue
 
         headers = requests.head(media_link)
         # Can be a redirect if it's a fastball-clips URL
         if headers.status_code == 200:
             size_mb = round(float(headers.headers['content-length']) / (1024 ** 2), 2)
-            video_text_block.append("[{}]({}) ({} MB)".format(link_text, media_link, size_mb))
-    video_text_block.append("___________")
-    return video_text_block
+            mp4_sorter.append((link_text, media_link, size_mb))
+
+    # Sort links by descending size
+    mp4_sorter.sort(key=lambda x: x[2], reverse=True)
+    for link_text, media_link, size_mb in mp4_sorter:
+        # reformat the link text to be more human readable
+        if link_text == 'highBit':
+            link_text = 'High Definition'
+        elif link_text == 'mp4Avc':
+            link_text = 'Standard Definiton'
+        else:
+            # Look for things like FLASH_1800K_960x540
+            resolution_match = re.match('\w+_(?P<resolution>\d+K)_[\dX]+', link_text)
+            if resolution_match:
+                link_text = resolution_match.group('resolution')
+
+        mp4_links.append("[{}]({}) ({} MB)".format(link_text, media_link, size_mb))
+
+    return ["Video: {}".format(title)] + streamable_links + mp4_links + ["___________"]
 
 
 def format_old_comments(regex_matches):
@@ -263,3 +315,7 @@ def get_media_for_old_content_id(match):
         media['media'].append((small_mp4_url, 'Smaller Version'))
  
     return media
+
+# Pass a test URL as the first arg to do a test run
+if __name__ == '__main__':
+    print(find_mlb_links(sys.argv[1]))
