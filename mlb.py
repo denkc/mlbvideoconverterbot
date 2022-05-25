@@ -17,7 +17,7 @@ OLD_MLB_PATTERNS = [
 ]
 
 MLB_PATTERNS = [
-    '\S*mi?lb.com/video/(?P<content_id>[\w\-]*)'
+    '\S*mi?lb.com/.*video/(?P<content_id>[\w\-]*)'
 ]
 
 MLB_SKIP_PATTERNS = [
