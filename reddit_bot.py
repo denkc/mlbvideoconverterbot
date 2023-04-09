@@ -7,8 +7,6 @@ from praw.models import Comment
 
 from mlb import find_mlb_links
 import config
-import db
-from six.moves import range
 
 reddit = praw.Reddit(
     user_agent=config.REDDIT_USERAGENT,
@@ -54,33 +52,24 @@ def reply(mlb_links, comment_or_submission):
     return True
 
 
-def check_comment(comment, conn, cursor):
-    if db.check_hash_exists('comments', comment.id, cursor):
-        return False
+def check_comment(comment):
     if comment.__class__.__name__ == 'MoreComments':
         return False
 
     mlb_links = find_mlb_links(comment.body)
     if reply(mlb_links, comment):
-        cursor.execute("INSERT INTO comments (hash_id) VALUES ('{}');".format(comment.id))
-        conn.commit()
         return True
 
     return False
 
 
-def check_submission(submission, conn, cursor):
-    if db.check_hash_exists('submissions', submission.id, cursor):
-        return False
-
+def check_submission(submission):
     if submission.is_self:
         mlb_links = find_mlb_links(submission.selftext)
     else:
         mlb_links = find_mlb_links(submission.url)
 
     if reply(mlb_links, submission):
-        cursor.execute("INSERT INTO submissions (hash_id) VALUES ('{}');".format(submission.id))
-        conn.commit()
         return True
 
     return False
@@ -103,8 +92,8 @@ def main():
     # Even though main is already wrapped in a while True below, this maintains the
     #   stream settings so it doesn't load any historical info
     subreddit = reddit.subreddit('+'.join(subreddits))
-    comment_stream = subreddit.stream.comments(pause_after=0)
-    submission_stream = subreddit.stream.submissions(pause_after=0)
+    comment_stream = subreddit.stream.comments(skip_existing=True, pause_after=0)
+    submission_stream = subreddit.stream.submissions(skip_existing=True, pause_after=0)
 
     iteration = 0
     while True:
@@ -112,23 +101,19 @@ def main():
             print("Iteration: {}".format(iteration))
         iteration += 1
 
-        conn, cursor = db.connect_to_db()
-
         for comment in comment_stream:
             if comment is None:
                 break
-            check_comment(comment, conn, cursor)
+            check_comment(comment)
 
         for submission in submission_stream:
             if submission is None:
                 break
-            check_submission(submission, conn, cursor)
+            check_submission(submission)
 
         #for comment in reddit.inbox.unread(mark_read=True, limit=None):
         #    if isinstance(comment, Comment):
         #        check_comment(comment, conn, cursor)
-
-        conn.close()
 
 
 if __name__ == '__main__':
